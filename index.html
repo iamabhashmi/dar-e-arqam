@@ -19,6 +19,8 @@
 
 
 
+
+
 :root{--blue:#1a3a6b;--blue-l:#2d5a9f;--blue-p:#e8eef5;--gold:#c8972a;--cream:#faf8f3;--ink:#1c1c1e;--ink-s:#4a4a4f;--ink-m:#8a8a92;--bdr:#e0ddd6;--red:#c0392b;--red-p:#fdf0ee;--green:#1a6b4a;--green-l:#2d9566;--green-p:#e8f5ef;--org:#e65100;--org-p:#fff3e0;--sh:0 2px 16px rgba(26,58,107,.10);--sh-l:0 8px 40px rgba(26,58,107,.13)}
 *{box-sizing:border-box;margin:0;padding:0}body{font-family:"DM Sans",sans-serif;background:var(--cream);color:var(--ink);min-height:100vh}
 header{background:linear-gradient(135deg,#1a3a6b,#2d5a9f);color:#fff;padding:0 16px;display:flex;align-items:center;gap:12px;min-height:66px;box-shadow:0 2px 16px rgba(26,58,107,.4);position:sticky;top:0;z-index:100}
@@ -71,6 +73,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .wb{background:var(--red-p);border:1px solid #f5c6c2;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:12px;color:var(--red)}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}}
+
+
 
 
 
@@ -801,39 +805,50 @@ function pmUpdate() {
 function confirmFee() {
   var s=DB.students.find(function(x){return x.id===_pid;});
   var arr=GA(s.id), fee=parseFloat(s.fee);
+  var conc=GN('pm-conc')||0;
+  var tot=fee+arr-conc;
   var ex=DB.fees.find(function(f){return f.sid===_pid&&f.key===_pkey;});
-  var isAddMore=ex&&ex.partial;
   var rec=GN('pm-amt');
   if(!rec||rec<=0){showAlert('a-pm','Enter amount received',true);return;}
-  var rno=ex?ex.rno:'F-'+Date.now().toString().slice(-5);
-  var idx=DB.students.findIndex(function(x){return x.id===_pid;});
 
-  if(isAddMore){
-    if(rec>arr){showAlert('a-pm','Amount exceeds arrears: '+fmt(arr),true);return;}
-    var newArr=arr-rec;
-    var prevPaid=parseFloat(ex.paid||0);
-    DB.fees=DB.fees.filter(function(f){return!(f.sid===_pid&&f.key===_pkey);});
-    DB.fees.push({id:uid(),sid:_pid,key:_pkey,monthly:fee,arrears:arr,concession:0,
-      total:fee+arr,paid:prevPaid+rec,balance:newArr,partial:newArr>0,
-      date:new Date().toISOString(),rno:rno});
-    if(idx!==-1) DB.students[idx].arr=newArr;
-    logActivity('Fee','Arrears paid: '+s.name+' Rs.'+rec+' | Remaining: Rs.'+newArr+' | '+_pkey,rec);
-  } else {
-    var conc=GN('pm-conc')||0;
-    var tot=fee+arr-conc;
-    if(rec>tot){ if(!confirm('Amount ('+fmt(rec)+') exceeds total due ('+fmt(tot)+'). Are you sure?')) return; }
-    var bal=tot-rec;
-    DB.fees=DB.fees.filter(function(f){return!(f.sid===_pid&&f.key===_pkey);});
-    DB.fees.push({id:uid(),sid:_pid,key:_pkey,monthly:fee,arrears:arr,concession:conc,
-      total:tot,paid:rec,balance:bal,partial:bal>0,
-      date:new Date().toISOString(),rno:rno});
-    if(idx!==-1) DB.students[idx].arr=bal;
-    if(conc>0) logActivity('Fee','Fee: '+s.name+' | Concession: '+fmt(conc)+' | '+_pkey,rec);
-    else logActivity('Fee','Fee: '+s.name+' | '+_pkey,rec);
+  // Always use existing record's paid amount + new payment
+  var prevPaid=ex?parseFloat(ex.paid||0):0;
+  var totalPaid=prevPaid+rec;
+
+  // Warn if overpaying
+  if(totalPaid>tot){
+    if(!confirm('Amount ('+fmt(totalPaid)+') exceeds total due ('+fmt(tot)+'). Are you sure?')) return;
   }
+
+  var bal=Math.max(0,tot-totalPaid);
+  var full=bal<=0;
+  var rno=ex?ex.rno:'F-'+Date.now().toString().slice(-5);
+
+  // REMOVE old record and add updated one (prevents duplicates)
+  DB.fees=DB.fees.filter(function(f){return!(f.sid===_pid&&f.key===_pkey);});
+
+  var feeRec={id:rno,sid:_pid,key:_pkey,monthly:fee,arrears:arr,concession:conc,
+    total:tot,paid:totalPaid,balance:bal,partial:!full,
+    date:new Date().toISOString(),rno:rno};
+  DB.fees.push(feeRec);
+
+  // Update student arrears
+  var sidx=DB.students.findIndex(function(x){return x.id===_pid;});
+  if(sidx!==-1) DB.students[sidx].arr=bal;
+
+  if(conc>0) logActivity('Fee','Fee: '+s.name+' | Concession: '+fmt(conc)+' | '+_pkey,rec);
+  else logActivity('Fee','Fee: '+s.name+' | '+_pkey,rec);
+
   save();
-  syncToFB('fees',DB.fees[DB.fees.length-1]);
-  if(idx!==-1) syncToFB('students',DB.students[idx]);
+  syncToFB('fees',feeRec);
+  if(sidx!==-1) syncToFB('students',DB.students[sidx]);
+  // Also delete any duplicate fee records for this student/month from Firebase
+  db.ref('fees').orderByChild('sid').equalTo(_pid).once('value').then(function(snap){
+    var data=snap.val()||{};
+    Object.keys(data).forEach(function(k){
+      if(data[k].key===_pkey && k!==rno) db.ref('fees/'+k).remove();
+    });
+  });
   CM('ov-pm'); renderFees(); updateDash(); showFeeRcpt(_pid,_pkey);
 }
 
@@ -1010,20 +1025,41 @@ function confirmSal() {
   var ex=DB.salaries.find(function(r){return r.sid===_psid&&r.key===_pskey;});
   var alreadyPaid=ex?parseFloat(ex.paid||0):0;
   var prevArr=0;
-  DB.salaries.forEach(function(r){if(r.sid===_psid&&r.key!==_pskey&&r.partial&&r.balance>0) prevArr+=parseFloat(r.balance||0);});
-  var totalDue=parseFloat(s.salary)+prevArr,rem=totalDue-alreadyPaid,rec=GN('ps-amt');
+  DB.salaries.forEach(function(r){
+    if(r.sid===_psid&&r.key!==_pskey&&r.partial&&r.balance>0) prevArr+=parseFloat(r.balance||0);
+  });
+  var totalDue=parseFloat(s.salary)+prevArr;
+  var rem=totalDue-alreadyPaid;
+  var rec=GN('ps-amt');
   if(!rec||rec<=0){showAlert('a-ps','Enter amount paid',true);return;}
-  if(rec>rem){showAlert('a-ps','Amount exceeds: '+fmt(rem),true);return;}
-  var totalPaid=alreadyPaid+rec,bal=totalDue-totalPaid,full=bal<=0;
+  if(rec>rem){showAlert('a-ps','Amount exceeds remaining: '+fmt(rem),true);return;}
+  var totalPaid=alreadyPaid+rec;
+  var bal=Math.max(0,totalDue-totalPaid);
+  var full=bal<=0;
+  var rno=ex?ex.rno:'S-'+Date.now().toString().slice(-5);
+
+  // REMOVE old record — prevents duplicates
   DB.salaries=DB.salaries.filter(function(r){return!(r.sid===_psid&&r.key===_pskey);});
-  var rno='S-'+Date.now().toString().slice(-5);
-  var salRec={id:uid(),sid:_psid,key:_pskey,amount:s.salary,arrears:prevArr,total_due:totalDue,paid:totalPaid,balance:Math.max(0,bal),partial:!full,date:new Date().toISOString(),rno:rno};
+
+  var salRec={id:rno,sid:_psid,key:_pskey,amount:s.salary,arrears:prevArr,
+    total_due:totalDue,paid:totalPaid,balance:bal,partial:!full,
+    date:new Date().toISOString(),rno:rno};
   DB.salaries.push(salRec);
-  logActivity('Salary','Salary paid to '+s.name+' | Arrears: '+fmt(prevArr)+' | '+_pskey,totalPaid);
+
+  logActivity('Salary','Salary: '+s.name+' | '+_pskey,rec);
   save();
-  syncToFB('salaries',DB.salaries[DB.salaries.length-1]);
+  syncToFB('salaries',salRec);
+  // Remove any duplicate salary records for this staff/month from Firebase
+  db.ref('salaries').orderByChild('sid').equalTo(_psid).once('value').then(function(snap){
+    var data=snap.val()||{};
+    Object.keys(data).forEach(function(k){
+      if(data[k].key===_pskey && k!==rno) db.ref('salaries/'+k).remove();
+    });
+  });
   CM('ov-ps'); renderSalary(); updateDash(); showSalSlip(_psid,_pskey);
 }
+
+
 function showSalSlip(sid,key) {
   var s=DB.staff.find(function(x){return x.id===sid;});
   var rec=DB.salaries.find(function(r){return r.sid===sid&&r.key===key;});
