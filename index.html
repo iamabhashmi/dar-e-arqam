@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260529184302 -->
+<!-- v20260529185845 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -9,6 +9,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
+
 
 
 
@@ -80,6 +82,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .wb{background:var(--red-p);border:1px solid #f5c6c2;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:12px;color:var(--red)}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}}
+
+
 
 
 
@@ -874,11 +878,9 @@ function confirmFee() {
   var rec=GN('pm-amt');
   if(!rec||rec<=0){showAlert('a-pm','Enter amount received',true);return;}
 
-  // Always use existing record's paid amount + new payment
   var prevPaid=ex?parseFloat(ex.paid||0):0;
   var totalPaid=prevPaid+rec;
 
-  // Warn if overpaying
   if(totalPaid>tot){
     if(!confirm('Amount ('+fmt(totalPaid)+') exceeds total due ('+fmt(tot)+'). Are you sure?')) return;
   }
@@ -886,16 +888,19 @@ function confirmFee() {
   var bal=Math.max(0,tot-totalPaid);
   var full=bal<=0;
   var rno=ex?ex.rno:'F-'+Date.now().toString().slice(-5);
+  var now=new Date().toISOString();
 
-  // REMOVE old record and add updated one (prevents duplicates)
+  // Track each payment transaction
+  var payments=(ex&&ex.payments)?ex.payments.slice():[];
+  payments.push({date:now, amount:rec});
+
   DB.fees=DB.fees.filter(function(f){return!(f.sid===_pid&&f.key===_pkey);});
 
   var feeRec={id:rno,sid:_pid,key:_pkey,monthly:fee,arrears:arr,concession:conc,
     total:tot,paid:totalPaid,balance:bal,partial:!full,
-    date:new Date().toISOString(),rno:rno};
+    date:now,rno:rno,payments:payments};
   DB.fees.push(feeRec);
 
-  // Update student arrears
   var sidx=DB.students.findIndex(function(x){return x.id===_pid;});
   if(sidx!==-1) DB.students[sidx].arr=bal;
 
@@ -905,7 +910,6 @@ function confirmFee() {
   save();
   syncToFB('fees',feeRec);
   if(sidx!==-1) syncToFB('students',DB.students[sidx]);
-  // Also delete any duplicate fee records for this student/month from Firebase
   db.ref('fees').orderByChild('sid').equalTo(_pid).once('value').then(function(snap){
     var data=snap.val()||{};
     Object.keys(data).forEach(function(k){
@@ -914,7 +918,6 @@ function confirmFee() {
   });
   CM('ov-pm'); renderFees(); updateDash(); showFeeRcpt(_pid,_pkey);
 }
-
 
 function showFeeRcpt(sid,key) {
   var s=DB.students.find(function(x){return x.id===sid;});
@@ -1118,19 +1121,22 @@ function confirmSal() {
   var bal=Math.max(0,totalDue-totalPaid);
   var full=bal<=0;
   var rno=ex?ex.rno:'S-'+Date.now().toString().slice(-5);
+  var now=new Date().toISOString();
 
-  // REMOVE old record — prevents duplicates
+  // Track each payment transaction
+  var payments=(ex&&ex.payments)?ex.payments.slice():[];
+  payments.push({date:now, amount:rec});
+
   DB.salaries=DB.salaries.filter(function(r){return!(r.sid===_psid&&r.key===_pskey);});
 
   var salRec={id:rno,sid:_psid,key:_pskey,amount:s.salary,arrears:prevArr,
     total_due:totalDue,paid:totalPaid,balance:bal,partial:!full,
-    date:new Date().toISOString(),rno:rno};
+    date:now,rno:rno,payments:payments};
   DB.salaries.push(salRec);
 
   logActivity('Salary','Salary: '+s.name+' | '+_pskey,rec);
   save();
   syncToFB('salaries',salRec);
-  // Remove any duplicate salary records for this staff/month from Firebase
   db.ref('salaries').orderByChild('sid').equalTo(_psid).once('value').then(function(snap){
     var data=snap.val()||{};
     Object.keys(data).forEach(function(k){
@@ -1139,7 +1145,6 @@ function confirmSal() {
   });
   CM('ov-ps'); renderSalary(); updateDash(); showSalSlip(_psid,_pskey);
 }
-
 
 function showSalSlip(sid,key) {
   var s=DB.staff.find(function(x){return x.id===sid;});
@@ -1243,13 +1248,28 @@ function renderHistory() {
     if(!recs.length){tb.innerHTML='<tr><td colspan="6"><div class="empty">No fee records for '+s.name+'</div></td></tr>';G('hist-summary-card').style.display='none';return;}
     var rows='',totalPaid=0;
     recs.forEach(function(f){
-      var d=new Date(f.date);
       var parts=f.key.split('-');
       var monthName=(MNAME[parts[0]]||parts[0])+' '+parts[1];
-      var paid=parseFloat(f.paid||0),bal=parseFloat(f.balance||0),tot=parseFloat(f.total||0);
-      totalPaid+=paid;
+      var tot=parseFloat(f.total||0),bal=parseFloat(f.balance||0);
       var st=f.partial?'<span class="bx borg">Partial</span>':'<span class="bx bg">Paid</span>';
-      rows+='<tr><td><strong>'+monthName+'</strong></td><td>'+d.toLocaleDateString('en-PK')+'</td><td>'+fmt(tot)+'</td><td style="color:var(--green-l)">'+fmt(paid)+'</td><td style="color:'+(bal>0?'var(--red)':'var(--ink-m)')+'">'+(bal>0?fmt(bal):'-')+'</td><td>'+st+'</td></tr>';
+      // If multiple payments, show each one
+      if(f.payments && f.payments.length>1){
+        f.payments.forEach(function(p,pi){
+          var pd=new Date(p.date);
+          var pamt=parseFloat(p.amount||0);
+          totalPaid+=pamt;
+          var lbl=pi===0?('<strong>'+monthName+'</strong>'):'<span style="color:var(--ink-m);font-size:11px">↳ '+monthName+' (installment '+(pi+1)+')</span>';
+          var showBal=pi===f.payments.length-1?(bal>0?fmt(bal):'-'):'';
+          var showStat=pi===f.payments.length-1?st:'';
+          var showTot=pi===0?fmt(tot):'';
+          rows+='<tr><td>'+lbl+'</td><td>'+pd.toLocaleDateString('en-PK')+'</td><td>'+showTot+'</td><td style="color:var(--green-l)">'+fmt(pamt)+'</td><td style="color:'+(bal>0?'var(--red)':'var(--ink-m)')+'">'+showBal+'</td><td>'+showStat+'</td></tr>';
+        });
+      } else {
+        var d=new Date(f.date);
+        var paid=parseFloat(f.paid||0);
+        totalPaid+=paid;
+        rows+='<tr><td><strong>'+monthName+'</strong></td><td>'+d.toLocaleDateString('en-PK')+'</td><td>'+fmt(tot)+'</td><td style="color:var(--green-l)">'+fmt(paid)+'</td><td style="color:'+(bal>0?'var(--red)':'var(--ink-m)')+'">'+(bal>0?fmt(bal):'-')+'</td><td>'+st+'</td></tr>';
+      }
     });
     tb.innerHTML=rows;
     G('hist-name').textContent=s.name+' — '+s.cls;
@@ -1265,13 +1285,27 @@ function renderHistory() {
     if(!recs.length){tb.innerHTML='<tr><td colspan="6"><div class="empty">No salary records for '+st.name+'</div></td></tr>';G('hist-summary-card').style.display='none';return;}
     var rows='',totalPaid=0;
     recs.forEach(function(r){
-      var d=new Date(r.date);
       var parts=r.key.split('-');
       var monthName=(MNAME[parts[0]]||parts[0])+' '+parts[1];
-      var paid=parseFloat(r.paid||0),bal=parseFloat(r.balance||0),tot=parseFloat(r.total_due||r.amount||0);
-      totalPaid+=paid;
+      var tot=parseFloat(r.total_due||r.amount||0),bal=parseFloat(r.balance||0);
       var stat=r.partial?'<span class="bx borg">Partial</span>':'<span class="bx bg">Paid</span>';
-      rows+='<tr><td><strong>'+monthName+'</strong></td><td>'+d.toLocaleDateString('en-PK')+'</td><td>'+fmt(tot)+'</td><td style="color:var(--green-l)">'+fmt(paid)+'</td><td style="color:'+(bal>0?'var(--red)':'var(--ink-m)')+'">'+(bal>0?fmt(bal):'-')+'</td><td>'+stat+'</td></tr>';
+      if(r.payments && r.payments.length>1){
+        r.payments.forEach(function(p,pi){
+          var pd=new Date(p.date);
+          var pamt=parseFloat(p.amount||0);
+          totalPaid+=pamt;
+          var lbl=pi===0?('<strong>'+monthName+'</strong>'):'<span style="color:var(--ink-m);font-size:11px">↳ '+monthName+' (installment '+(pi+1)+')</span>';
+          var showBal=pi===r.payments.length-1?(bal>0?fmt(bal):'-'):'';
+          var showStat=pi===r.payments.length-1?stat:'';
+          var showTot=pi===0?fmt(tot):'';
+          rows+='<tr><td>'+lbl+'</td><td>'+pd.toLocaleDateString('en-PK')+'</td><td>'+showTot+'</td><td style="color:var(--green-l)">'+fmt(pamt)+'</td><td style="color:'+(bal>0?'var(--red)':'var(--ink-m)')+'">'+showBal+'</td><td>'+showStat+'</td></tr>';
+        });
+      } else {
+        var d=new Date(r.date);
+        var paid=parseFloat(r.paid||0);
+        totalPaid+=paid;
+        rows+='<tr><td><strong>'+monthName+'</strong></td><td>'+d.toLocaleDateString('en-PK')+'</td><td>'+fmt(tot)+'</td><td style="color:var(--green-l)">'+fmt(paid)+'</td><td style="color:'+(bal>0?'var(--red)':'var(--ink-m)')+'">'+(bal>0?fmt(bal):'-')+'</td><td>'+stat+'</td></tr>';
+      }
     });
     tb.innerHTML=rows;
     G('hist-name').textContent=st.name+' — '+st.role;
@@ -1320,7 +1354,6 @@ function renderPayables() {
   var rows='', gFee=0, gSummer=0, gAnnual=0, gTotal=0, countDue=0;
   for(var i=0;i<list.length;i++){
     var s=list[i];
-    // Fee due (only for non-free students)
     var feeDue=0;
     if(!s.free){
       var arr=GA(s.id);
@@ -1328,11 +1361,9 @@ function renderPayables() {
       if(!rec) feeDue=parseFloat(s.fee)+arr;
       else if(rec.partial) feeDue=parseFloat(rec.balance||0);
     }
-    // Summer pack due
     var summerDue=0;
     var sumRec=(DB.summer||[]).find(function(x){return x.sid===s.id&&x.yr===session;});
     if(!sumRec) summerDue=getSummerPrice2(s.cls);
-    // Annual fund due
     var annualDue=0;
     var anRec=(DB.annual||[]).find(function(x){return x.sid===s.id&&x.yr===session;});
     if(!anRec) annualDue=2000;
@@ -1340,12 +1371,24 @@ function renderPayables() {
     gFee+=feeDue; gSummer+=summerDue; gAnnual+=annualDue; gTotal+=total;
     if(total>0) countDue++;
     var fc=feeDue>0?'color:var(--red)':'color:var(--ink-m)';
-    var sc=summerDue>0?'color:var(--org)':'color:var(--ink-m)';
-    var ac=annualDue>0?'color:var(--gold)':'color:var(--ink-m)';
+    // Summer cell - with settle button if due
+    var summerCell;
+    if(summerDue>0){
+      summerCell='<span style="color:var(--org)">'+fmt(summerDue)+'</span> <button class="btn bo sm" style="padding:2px 6px;font-size:10px" data-id="'+s.id+'" data-y="'+session+'" onclick="settleSummer(this.dataset.id,this.dataset.y)">Settle</button>';
+    } else {
+      summerCell=(sumRec&&sumRec.settled)?'<span style="color:var(--ink-m);font-size:11px">Settled</span>':'<span style="color:var(--green-l)">Paid</span>';
+    }
+    // Annual cell - with settle button if due
+    var annualCell;
+    if(annualDue>0){
+      annualCell='<span style="color:var(--gold)">'+fmt(annualDue)+'</span> <button class="btn bo sm" style="padding:2px 6px;font-size:10px" data-id="'+s.id+'" data-y="'+session+'" onclick="settleAnnual(this.dataset.id,this.dataset.y)">Settle</button>';
+    } else {
+      annualCell=(anRec&&anRec.settled)?'<span style="color:var(--ink-m);font-size:11px">Settled</span>':'<span style="color:var(--green-l)">Paid</span>';
+    }
     rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.cls+'</td>'
       +'<td style="'+fc+'">'+(feeDue>0?fmt(feeDue):'-')+'</td>'
-      +'<td style="'+sc+'">'+(summerDue>0?fmt(summerDue):'Paid')+'</td>'
-      +'<td style="'+ac+'">'+(annualDue>0?fmt(annualDue):'Paid')+'</td>'
+      +'<td>'+summerCell+'</td>'
+      +'<td>'+annualCell+'</td>'
       +'<td style="font-weight:700;color:'+(total>0?'var(--red)':'var(--green-l)')+'">'+fmt(total)+'</td></tr>';
   }
   tb.innerHTML=rows;
@@ -1355,6 +1398,28 @@ function renderPayables() {
     +'<div class="sr"><span>Total Summer Pack Due</span><span class="am" style="color:var(--org)">'+fmt(gSummer)+'</span></div>'
     +'<div class="sr"><span>Total Annual Fund Due</span><span class="am" style="color:var(--gold)">'+fmt(gAnnual)+'</span></div>'
     +'<div class="sr"><span style="font-weight:700">GRAND TOTAL PAYABLE</span><span class="am" style="color:var(--red);font-weight:700;font-size:16px">'+fmt(gTotal)+'</span></div>';
+}
+
+function settleAnnual(sid, session) {
+  var s=DB.students.find(function(x){return x.id===sid;});
+  if(!confirm('Mark Annual Fund as settled for '+s.name+'? (Already counted in arrears — will NOT add to revenue)')) return;
+  if(!DB.annual) DB.annual=[];
+  var rec={id:uid(),sid:sid,yr:session,amount:0,settled:true,date:new Date().toISOString(),rno:'AN-SETTLED'};
+  DB.annual.push(rec);
+  save(); syncToFB('annual',rec);
+  logActivity('Annual','Annual fund SETTLED (in arrears) for '+s.name+' | '+session,0);
+  renderPayables();
+}
+
+function settleSummer(sid, session) {
+  var s=DB.students.find(function(x){return x.id===sid;});
+  if(!confirm('Mark Summer Pack as settled for '+s.name+'? (Already counted in arrears — will NOT add to revenue)')) return;
+  if(!DB.summer) DB.summer=[];
+  var rec={id:uid(),sid:sid,yr:session,amount:0,settled:true,date:new Date().toISOString(),rno:'SP-SETTLED'};
+  DB.summer.push(rec);
+  save(); syncToFB('summer',rec);
+  logActivity('Summer','Summer pack SETTLED (in arrears) for '+s.name+' | '+session,0);
+  renderPayables();
 }
 
 function printPayables() {
