@@ -21,6 +21,8 @@
 
 
 
+
+
 :root{--blue:#1a3a6b;--blue-l:#2d5a9f;--blue-p:#e8eef5;--gold:#c8972a;--cream:#faf8f3;--ink:#1c1c1e;--ink-s:#4a4a4f;--ink-m:#8a8a92;--bdr:#e0ddd6;--red:#c0392b;--red-p:#fdf0ee;--green:#1a6b4a;--green-l:#2d9566;--green-p:#e8f5ef;--org:#e65100;--org-p:#fff3e0;--sh:0 2px 16px rgba(26,58,107,.10);--sh-l:0 8px 40px rgba(26,58,107,.13)}
 *{box-sizing:border-box;margin:0;padding:0}body{font-family:"DM Sans",sans-serif;background:var(--cream);color:var(--ink);min-height:100vh}
 header{background:linear-gradient(135deg,#1a3a6b,#2d5a9f);color:#fff;padding:0 16px;display:flex;align-items:center;gap:12px;min-height:66px;box-shadow:0 2px 16px rgba(26,58,107,.4);position:sticky;top:0;z-index:100}
@@ -73,6 +75,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .wb{background:var(--red-p);border:1px solid #f5c6c2;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:12px;color:var(--red)}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}}
+
+
 
 
 
@@ -398,6 +402,12 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
     </div>
     <div id="a-cp" class="al"></div>
     <button class="btn bp" onclick="changePasswordUI()">Change Password</button>
+  </div>
+  <div class="card">
+    <div class="ct">Data Cleanup</div>
+    <p style="font-size:12px;color:var(--ink-s);margin-bottom:12px">Remove duplicate fee and salary records automatically.</p>
+    <div id="a-cleanup" class="al"></div>
+    <button class="btn bp" onclick="var c=cleanupDuplicates();showAlert('a-cleanup',c>0?'Cleaned '+c+' duplicate records!':'No duplicates found — data is clean!');updateDash();renderFees();">Run Cleanup</button>
   </div>
   <div class="card"><div class="ct">Export Data</div><div id="estats" class="ib"></div><p style="font-size:12px;color:var(--ink-s);margin-bottom:12px">Saves all your data as a .json file.</p><button class="btn bp" onclick="exportData()">Download Backup</button></div>
   <div class="card"><div class="ct">Import Data</div><div class="wb">Warning: This replaces ALL current data. Export first!</div><div class="fg"><label>Select .json backup file</label><input type="file" id="impf" accept=".json" style="background:#fff"></div><div id="a-imp" class="al"></div><button class="btn bg2" onclick="importData()">Restore Backup</button></div>
@@ -852,6 +862,50 @@ function confirmFee() {
   CM('ov-pm'); renderFees(); updateDash(); showFeeRcpt(_pid,_pkey);
 }
 
+
+function showFeeRcpt(sid,key) {
+  var s=DB.students.find(function(x){return x.id===sid;});
+  var f=DB.fees.find(function(x){return x.sid===sid&&x.key===key;});
+  if(!s||!f){alert('Receipt not found!');return;}
+  var parts=key.split('-'),mo=parts[0],yr=parts[1],d=new Date(f.date);
+  var arr=f.arrears||0,tot=f.total||parseFloat(s.fee),paid=f.paid||f.monthly||tot,bal=f.balance||0;
+  var r='================================
+    DAR-E-ARQAM SCHOOL
+         Fee Receipt
+================================
+';
+  r+='Receipt No: '+f.rno+'
+Date      : '+d.toLocaleDateString('en-PK')+'
+';
+  r+='--------------------------------
+Student   : '+s.name+'
+Father    : '+s.father+'
+Class     : '+s.cls+'
+Month     : '+MNAME[mo]+' '+yr+'
+';
+  r+='--------------------------------
+Monthly Fee: '+fmt(s.fee)+'
+';
+  if(arr>0) r+='Arrears   : '+fmt(arr)+'
+Total Due : '+fmt(tot)+'
+';
+  r+='--------------------------------
+Paid      : '+fmt(paid)+'
+';
+  if(f.partial&&bal>0){r+='Balance   : '+fmt(bal)+'
+--------------------------------
+  STATUS: PARTIAL PAYMENT
+  Balance added to arrears
+';}
+  else{r+='--------------------------------
+   STATUS: PAID IN FULL
+';}
+  r+='================================
+        Thank you!
+    Dar-e-Arqam School
+================================';
+  showRcpt(r,s.name.replace(/ /g,'-')+'-Fee-'+MNAME[mo]+'-'+yr);
+}
 
 /* ---- ADMISSION ---- */
 function populateAdm() {
@@ -1574,6 +1628,71 @@ function changePasswordUI() {
   document.getElementById('cp-new').value='';
   document.getElementById('cp-conf').value='';
   showAlert('a-cp','Password changed successfully!');
+}
+
+// ===== CLEANUP DUPLICATES =====
+function cleanupDuplicates() {
+  var cleaned = 0;
+
+  // Clean duplicate fees (same sid + key)
+  var seenFees = {};
+  var toDeleteFees = [];
+  DB.fees.forEach(function(f) {
+    var k = f.sid + '_' + f.key;
+    if(seenFees[k]) {
+      // Keep the one with higher paid amount
+      if(parseFloat(f.paid||0) >= parseFloat(seenFees[k].paid||0)) {
+        toDeleteFees.push(seenFees[k].id);
+        seenFees[k] = f;
+      } else {
+        toDeleteFees.push(f.id);
+      }
+    } else {
+      seenFees[k] = f;
+    }
+  });
+  toDeleteFees.forEach(function(id) {
+    DB.fees = DB.fees.filter(function(f){ return f.id !== id; });
+    db.ref('fees/' + id).remove();
+    cleaned++;
+  });
+
+  // Clean duplicate salaries (same sid + key)
+  var seenSal = {};
+  var toDeleteSal = [];
+  DB.salaries.forEach(function(r) {
+    var k = r.sid + '_' + r.key;
+    if(seenSal[k]) {
+      if(parseFloat(r.paid||0) >= parseFloat(seenSal[k].paid||0)) {
+        toDeleteSal.push(seenSal[k].id);
+        seenSal[k] = r;
+      } else {
+        toDeleteSal.push(r.id);
+      }
+    } else {
+      seenSal[k] = r;
+    }
+  });
+  toDeleteSal.forEach(function(id) {
+    DB.salaries = DB.salaries.filter(function(r){ return r.id !== id; });
+    db.ref('salaries/' + id).remove();
+    cleaned++;
+  });
+
+  if(cleaned > 0) {
+    save();
+    console.log('Cleaned ' + cleaned + ' duplicate records!');
+  }
+  return cleaned;
+}
+
+// Run cleanup on every load
+function runStartupCleanup() {
+  var cleaned = cleanupDuplicates();
+  if(cleaned > 0) {
+    updateDash();
+    renderFees();
+  }
 }
 
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
