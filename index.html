@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260529185845 -->
+<!-- v20260530042029 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -7,8 +7,10 @@
 <title>Dar-e-Arqam School Finance</title>
 <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@600;700&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -82,6 +84,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .wb{background:var(--red-p);border:1px solid #f5c6c2;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:12px;color:var(--red)}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}}
+
 
 
 
@@ -1873,52 +1876,49 @@ function saveReceipt() {
   a.download=name+'.jpg';a.click();
 }
 
-// ===== PASSWORD PROTECTION =====
-var PASS = localStorage.getItem('dea-pass') || '1122'; // Default: 1122
+// ===== FIREBASE AUTHENTICATION =====
+var auth = firebase.auth();
 
 function showLoginScreen() {
+  G('loading-overlay').style.display='none';
   document.body.innerHTML = '<div style="min-height:100vh;background:linear-gradient(135deg,#1a3a6b,#2d5a9f);display:flex;align-items:center;justify-content:center;padding:20px">'
     + '<div style="background:#fff;border-radius:16px;padding:32px;max-width:340px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.3);text-align:center">'
-    + '<img src="' + (document.querySelector('img.logo') ? document.querySelector('img.logo').src : '') + '" style="width:70px;height:70px;border-radius:10px;border:2px solid #c8972a;margin-bottom:16px">'
+    + '<img src="' + LOGO_SRC + '" style="width:70px;height:70px;border-radius:10px;border:2px solid #c8972a;margin-bottom:16px">'
     + '<h2 style="font-family:Playfair Display,serif;color:#1a3a6b;margin-bottom:4px">Dar-e-Arqam School</h2>'
     + '<p style="color:#8a8a92;font-size:13px;margin-bottom:24px">Finance Management System</p>'
+    + '<div style="margin-bottom:12px;text-align:left"><label style="font-size:11px;font-weight:600;color:#4a4a4f;display:block;margin-bottom:6px">EMAIL</label>'
+    + '<input type="email" id="login-email" placeholder="Enter email" style="width:100%;padding:10px 14px;border:1.5px solid #e0ddd6;border-radius:8px;font-size:14px;outline:none;font-family:DM Sans,sans-serif"></div>'
     + '<div style="margin-bottom:16px;text-align:left"><label style="font-size:11px;font-weight:600;color:#4a4a4f;display:block;margin-bottom:6px">PASSWORD</label>'
-    + '<input type="password" id="pass-input" placeholder="Enter password" le="width:100%;padding:10px 14px;border:1.5px solid #e0ddd6;border-radius:8px;font-size:14px;outline:none;font-family:DM Sans,sans-serif">'
-    + '</div>'
-    + '<div id="pass-err" style="color:#c0392b;font-size:12px;margin-bottom:12px;display:none">Incorrect password. Try again!</div>'
-    + '<button onclick="checkPass()" style="width:100%;padding:11px;background:#1a3a6b;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:DM Sans,sans-serif">Login</button>'
+    + '<input type="password" id="login-pass" placeholder="Enter password" style="width:100%;padding:10px 14px;border:1.5px solid #e0ddd6;border-radius:8px;font-size:14px;outline:none;font-family:DM Sans,sans-serif"></div>'
+    + '<div id="login-err" style="color:#c0392b;font-size:12px;margin-bottom:12px;display:none"></div>'
+    + '<button id="login-btn" style="width:100%;padding:11px;background:#1a3a6b;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:DM Sans,sans-serif">Login</button>'
     + '</div></div>';
-
-  setTimeout(function(){ var inp=document.getElementById('pass-input'); if(inp) inp.addEventListener('keydown',function(e){if(e.key==='Enter') checkPass();}); },100);
+  setTimeout(function(){
+    var btn=document.getElementById('login-btn');
+    var pass=document.getElementById('login-pass');
+    if(btn) btn.addEventListener('click', doFirebaseLogin);
+    if(pass) pass.addEventListener('keydown', function(e){if(e.key==='Enter') doFirebaseLogin();});
+  },100);
 }
-function checkPass() {
-  var input = document.getElementById('pass-input');
-  if(!input) return;
-  if(input.value === PASS) {
-    localStorage.setItem('dea-auth','yes');
+
+function doFirebaseLogin() {
+  var email=document.getElementById('login-email').value.trim();
+  var pass=document.getElementById('login-pass').value;
+  var err=document.getElementById('login-err');
+  var btn=document.getElementById('login-btn');
+  if(!email||!pass){err.textContent='Enter email and password';err.style.display='block';return;}
+  btn.textContent='Logging in...'; btn.disabled=true;
+  auth.signInWithEmailAndPassword(email, pass).then(function(){
     location.reload();
-  } else {
-    document.getElementById('pass-err').style.display='block';
-    input.value='';
-    input.focus();
-  }
+  }).catch(function(e){
+    err.textContent='Wrong email or password!';
+    err.style.display='block';
+    btn.textContent='Login'; btn.disabled=false;
+  });
 }
 
 function logout() {
-  localStorage.removeItem('dea-auth');
-  location.reload();
-}
-
-function changePassword() {
-  var curr = prompt('Enter current password:');
-  if(curr !== PASS){ alert('Wrong password!'); return; }
-  var np = prompt('Enter new password:');
-  if(!np||np.length<4){ alert('Password must be at least 4 characters!'); return; }
-  var np2 = prompt('Confirm new password:');
-  if(np !== np2){ alert('Passwords do not match!'); return; }
-  PASS = np;
-  localStorage.setItem('dea-pass', np);
-  alert('Password changed successfully!');
+  auth.signOut().then(function(){ location.reload(); });
 }
 
 function changePasswordUI() {
@@ -1926,83 +1926,26 @@ function changePasswordUI() {
   var np=document.getElementById('cp-new').value;
   var conf=document.getElementById('cp-conf').value;
   if(!curr||!np||!conf){showAlert('a-cp','Fill all fields',true);return;}
-  if(curr!==PASS){showAlert('a-cp','Current password is wrong!',true);return;}
-  if(np.length<4){showAlert('a-cp','New password must be at least 4 characters!',true);return;}
+  if(np.length<6){showAlert('a-cp','New password must be at least 6 characters!',true);return;}
   if(np!==conf){showAlert('a-cp','Passwords do not match!',true);return;}
-  PASS=np;
-  localStorage.setItem('dea-pass',np);
-  document.getElementById('cp-curr').value='';
-  document.getElementById('cp-new').value='';
-  document.getElementById('cp-conf').value='';
-  showAlert('a-cp','Password changed successfully!');
+  var user=auth.currentUser;
+  if(!user){showAlert('a-cp','Not logged in!',true);return;}
+  var cred=firebase.auth.EmailAuthProvider.credential(user.email, curr);
+  user.reauthenticateWithCredential(cred).then(function(){
+    return user.updatePassword(np);
+  }).then(function(){
+    document.getElementById('cp-curr').value='';
+    document.getElementById('cp-new').value='';
+    document.getElementById('cp-conf').value='';
+    showAlert('a-cp','Password changed successfully!');
+  }).catch(function(e){
+    showAlert('a-cp','Current password is wrong!',true);
+  });
 }
 
-// ===== CLEANUP DUPLICATES =====
-function cleanupDuplicates() {
-  var cleaned = 0;
+var LOGO_SRC = '';
 
-  // Clean duplicate fees (same sid + key)
-  var seenFees = {};
-  var toDeleteFees = [];
-  DB.fees.forEach(function(f) {
-    var k = f.sid + '_' + f.key;
-    if(seenFees[k]) {
-      // Keep the one with higher paid amount
-      if(parseFloat(f.paid||0) >= parseFloat(seenFees[k].paid||0)) {
-        toDeleteFees.push(seenFees[k].id);
-        seenFees[k] = f;
-      } else {
-        toDeleteFees.push(f.id);
-      }
-    } else {
-      seenFees[k] = f;
-    }
-  });
-  toDeleteFees.forEach(function(id) {
-    DB.fees = DB.fees.filter(function(f){ return f.id !== id; });
-    db.ref('fees/' + id).remove();
-    cleaned++;
-  });
-
-  // Clean duplicate salaries (same sid + key)
-  var seenSal = {};
-  var toDeleteSal = [];
-  DB.salaries.forEach(function(r) {
-    var k = r.sid + '_' + r.key;
-    if(seenSal[k]) {
-      if(parseFloat(r.paid||0) >= parseFloat(seenSal[k].paid||0)) {
-        toDeleteSal.push(seenSal[k].id);
-        seenSal[k] = r;
-      } else {
-        toDeleteSal.push(r.id);
-      }
-    } else {
-      seenSal[k] = r;
-    }
-  });
-  toDeleteSal.forEach(function(id) {
-    DB.salaries = DB.salaries.filter(function(r){ return r.id !== id; });
-    db.ref('salaries/' + id).remove();
-    cleaned++;
-  });
-
-  if(cleaned > 0) {
-    save();
-    console.log('Cleaned ' + cleaned + ' duplicate records!');
-  }
-  return cleaned;
-}
-
-// Run cleanup on every load
-function runStartupCleanup() {
-  var cleaned = cleanupDuplicates();
-  if(cleaned > 0) {
-    updateDash();
-    renderFees();
-  }
-}
-
-function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
+function sleep(ms){function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
 async function doPrint() {
   var text=G('rc-txt').textContent;
   if(!navigator.bluetooth){alert('Use Chrome on Android for Bluetooth printing.');return;}
@@ -2027,14 +1970,19 @@ async function doPrint() {
   }
 }
 
-initDate();
-// Check password
-var _auth = localStorage.getItem('dea-auth');
-if(_auth === 'yes') {
-  loadFromFirebase();
-} else {
-  showLoginScreen();
-}
+// Capture logo source for login screen
+var _logoEl = document.querySelector('img.logo');
+if(_logoEl) LOGO_SRC = _logoEl.src;
+
+// Check Firebase auth state
+auth.onAuthStateChanged(function(user){
+  if(user){
+    initDate();
+    loadFromFirebase();
+  } else {
+    showLoginScreen();
+  }
+});
 
 </script>
 </body>
