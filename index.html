@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260530043453 -->
+<!-- v20260530045033 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -85,6 +86,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .wb{background:var(--red-p);border:1px solid #f5c6c2;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:12px;color:var(--red)}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}}
+
 
 
 
@@ -722,6 +724,10 @@ function initDate() {
   ['edt','sdt','admdt'].forEach(function(id){var el=G(id);if(el)el.value=today;});
   var cm=MONTHS[d.getMonth()];
   ['fmo','salmo','rpmo','dfmo','cr-mo','vmo'].forEach(function(id){var el=G(id);if(el)el.value=cm;});
+  // Apply viewer mode restrictions
+  if(IS_VIEWER){
+    applyViewerMode();
+  }
 }
 
 function checkFeeAlert() {
@@ -747,6 +753,8 @@ function toggleFreeStudent() {
   G('sarr').disabled=f; if(f) G('sarr').value='0';
 }
 function addStudent() {
+  if(viewerBlock()) return;
+
   var name=GV('sn'),father=GV('sf'),cls=GV('sc');
   var fee=G('sfree').checked?0:GN('sfee'),arr=G('sfree').checked?0:GN('sarr');
   var phone=GV('sph'),date=GV('sdt'),roll=GV('srl'),reg=GV('sreg');
@@ -775,6 +783,8 @@ function renderStudents() {
   tb.innerHTML=rows;
 }
 function delStudent(id) {
+  if(viewerBlock()) return;
+
   if(!confirm('Delete this student?')) return;
   DB.students=DB.students.filter(function(s){return s.id!==id;});
   DB.fees=DB.fees.filter(function(f){return f.sid!==id;});
@@ -790,6 +800,8 @@ function openES(id) {
   G('es-fee').disabled=s.free||false; OM('ov-es');
 }
 function saveStudent() {
+  if(viewerBlock()) return;
+
   var id=GV('es-id'),name=GV('es-n'),father=GV('es-f'),cls=GV('es-c');
   var isFree=G('es-free').checked;
   var fee=isFree?0:GN('es-fee'),arr=isFree?0:GN('es-arr');
@@ -875,6 +887,8 @@ function pmUpdate() {
 
 
 function confirmFee() {
+  if(viewerBlock()) return;
+
   var s=DB.students.find(function(x){return x.id===_pid;});
   var arr=GA(s.id), fee=parseFloat(s.fee);
   var conc=GN('pm-conc')||0;
@@ -951,6 +965,8 @@ function populateAdm() {
 }
 function calcAdm(){G('admtot').value=GN('admr')+GN('adma')+GN('admb')+GN('admst')+GN('admf');}
 function collectAdm() {
+  if(viewerBlock()) return;
+
   var sid=GV('adms'); if(!sid){showAlert('a-adm','Select a student',true);return;}
   var s=DB.students.find(function(x){return x.id===sid;});
   var r=GN('admr'),a=GN('adma'),b=GN('admb'),st=GN('admst'),f=GN('admf');
@@ -1010,6 +1026,8 @@ function renderAnnual() {
   tb.innerHTML=rows;
 }
 function collectAnnual(sid,yr) {
+  if(viewerBlock()) return;
+
   var amt=GN('anamt')||2000;
   var s=DB.students.find(function(x){return x.id===sid;});
   var anRec={id:uid(),sid:sid,yr:yr,amount:amt,date:new Date().toISOString(),rno:'A-'+Date.now().toString().slice(-5)};
@@ -1027,6 +1045,8 @@ function showAnRcpt(sid,yr) {
 
 /* ---- STAFF ---- */
 function addStaff() {
+  if(viewerBlock()) return;
+
   var name=GV('tn'),role=GV('tr'),sal=GN('tsal'),ph=GV('tph');
   if(!name||!role||!sal){showAlert('a-st','Fill required fields',true);return;}
   var ns={id:uid(),name:name,role:role,salary:sal,phone:ph};
@@ -1045,6 +1065,8 @@ function renderStaff() {
   tb.innerHTML=rows;
 }
 function delStaff(id) {
+  if(viewerBlock()) return;
+
   if(!confirm('Delete?')) return;
   DB.staff=DB.staff.filter(function(s){return s.id!==id;});
   DB.salaries=DB.salaries.filter(function(r){return r.sid!==id;});
@@ -1056,6 +1078,8 @@ function openEST(id) {
   G('est-sal').value=s.salary; G('est-ph').value=s.phone||''; OM('ov-est');
 }
 function saveStaff() {
+  if(viewerBlock()) return;
+
   var id=GV('est-id'),name=GV('est-n'),role=GV('est-r'),sal=GN('est-sal'),ph=GV('est-ph');
   if(!name||!role||!sal){showAlert('a-est','Fill all fields',true);return;}
   var idx=DB.staff.findIndex(function(x){return x.id===id;}); if(idx===-1) return;
@@ -1110,6 +1134,8 @@ function psUpdate() {
   G('ps-bal').style.color=bal>0?'var(--red)':'var(--green-l)'; G('ps-res').style.display='block';
 }
 function confirmSal() {
+  if(viewerBlock()) return;
+
   var s=DB.staff.find(function(x){return x.id===_psid;});
   var ex=DB.salaries.find(function(r){return r.sid===_psid&&r.key===_pskey;});
   var alreadyPaid=ex?parseFloat(ex.paid||0):0;
@@ -1168,6 +1194,8 @@ function showSalSlip(sid,key) {
 
 /* ---- EXPENSES ---- */
 function addExpense() {
+  if(viewerBlock()) return;
+
   var cat=GV('ecat'),amt=GN('eamt'),dt=GV('edt'),desc=GV('edesc');
   if(!amt||!dt){showAlert('a-ex','Fill amount and date',true);return;}
   var newExp={id:uid(),cat:cat,amount:amt,date:dt,desc:desc};
@@ -1190,6 +1218,8 @@ function renderExpenses() {
   tb.innerHTML=rows;
 }
 function delExp(id) {
+  if(viewerBlock()) return;
+
   if(!confirm('Delete?')) return;
   DB.expenses=DB.expenses.filter(function(e){return e.id!==id;});
   save(); deleteFromFB('expenses',id); renderExpenses(); updateDash();
@@ -1406,6 +1436,8 @@ function renderPayables() {
 }
 
 function settleAnnual(sid, session) {
+  if(viewerBlock()) return;
+
   var s=DB.students.find(function(x){return x.id===sid;});
   if(!confirm('Mark Annual Fund as settled for '+s.name+'? (Already counted in arrears — will NOT add to revenue)')) return;
   if(!DB.annual) DB.annual=[];
@@ -1417,6 +1449,8 @@ function settleAnnual(sid, session) {
 }
 
 function settleSummer(sid, session) {
+  if(viewerBlock()) return;
+
   var s=DB.students.find(function(x){return x.id===sid;});
   if(!confirm('Mark Summer Pack as settled for '+s.name+'? (Already counted in arrears — will NOT add to revenue)')) return;
   if(!DB.summer) DB.summer=[];
@@ -1654,6 +1688,8 @@ function autoFillReg() {
   });
 }
 function saveRegNos() {
+  if(viewerBlock()) return;
+
   G('reg-tbody').querySelectorAll('input').forEach(function(inp){
     var id=inp.dataset.id,field=inp.dataset.field,val=inp.value.trim();
     var idx=DB.students.findIndex(function(x){return x.id===id;});
@@ -1754,6 +1790,8 @@ function renderSummer() {
   }).join('');
 }
 function collectSummer(sid,yr,defAmt) {
+  if(viewerBlock()) return;
+
   var amtEl=G('spamt-'+sid);
   var amt=amtEl?parseFloat(amtEl.value)||parseFloat(defAmt):parseFloat(defAmt);
   var s=DB.students.find(function(x){return x.id===sid;});
@@ -1820,6 +1858,8 @@ function exportData() {
   a.click();
 }
 function importData() {
+  if(viewerBlock()) return;
+
   var file=G('impf').files[0];
   if(!file){showAlert('a-imp','Select a .json file',true);return;}
   var reader=new FileReader();
@@ -1887,20 +1927,68 @@ function showLoginScreen() {
     + '<div style="background:#fff;border-radius:16px;padding:32px;max-width:340px;width:100%;box-shadow:0 8px 40px rgba(0,0,0,.3);text-align:center">'
     + '<img src="' + LOGO_SRC + '" style="width:70px;height:70px;border-radius:10px;border:2px solid #c8972a;margin-bottom:16px">'
     + '<h2 style="font-family:Playfair Display,serif;color:#1a3a6b;margin-bottom:4px">Dar-e-Arqam School</h2>'
-    + '<p style="color:#8a8a92;font-size:13px;margin-bottom:24px">Finance Management System</p>'
+    + '<p style="color:#8a8a92;font-size:13px;margin-bottom:20px">Finance Management System</p>'
+    + '<div id="login-tabs" style="display:flex;gap:8px;margin-bottom:18px">'
+    + '<button id="tab-admin" onclick="switchTab(\'admin\')" style="flex:1;padding:8px;background:#1a3a6b;color:#fff;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:DM Sans,sans-serif">Admin</button>'
+    + '<button id="tab-view" onclick="switchTab(\'view\')" style="flex:1;padding:8px;background:#e8eef5;color:#1a3a6b;border:none;border-radius:8px;font-size:12px;font-weight:600;cursor:pointer;font-family:DM Sans,sans-serif">View Only</button>'
+    + '</div>'
+    + '<div id="admin-form">'
     + '<div style="margin-bottom:12px;text-align:left"><label style="font-size:11px;font-weight:600;color:#4a4a4f;display:block;margin-bottom:6px">EMAIL</label>'
     + '<input type="email" id="login-email" placeholder="Enter email" style="width:100%;padding:10px 14px;border:1.5px solid #e0ddd6;border-radius:8px;font-size:14px;outline:none;font-family:DM Sans,sans-serif"></div>'
     + '<div style="margin-bottom:16px;text-align:left"><label style="font-size:11px;font-weight:600;color:#4a4a4f;display:block;margin-bottom:6px">PASSWORD</label>'
     + '<input type="password" id="login-pass" placeholder="Enter password" style="width:100%;padding:10px 14px;border:1.5px solid #e0ddd6;border-radius:8px;font-size:14px;outline:none;font-family:DM Sans,sans-serif"></div>'
-    + '<div id="login-err" style="color:#c0392b;font-size:12px;margin-bottom:12px;display:none"></div>'
-    + '<button id="login-btn" style="width:100%;padding:11px;background:#1a3a6b;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:DM Sans,sans-serif">Login</button>'
+    + '<button id="login-btn" style="width:100%;padding:11px;background:#1a3a6b;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:DM Sans,sans-serif">Login as Admin</button>'
+    + '</div>'
+    + '<div id="view-form" style="display:none">'
+    + '<div style="margin-bottom:16px;text-align:left"><label style="font-size:11px;font-weight:600;color:#4a4a4f;display:block;margin-bottom:6px">VIEWER PASSWORD</label>'
+    + '<input type="password" id="view-pass" placeholder="Enter view password" style="width:100%;padding:10px 14px;border:1.5px solid #e0ddd6;border-radius:8px;font-size:14px;outline:none;font-family:DM Sans,sans-serif"></div>'
+    + '<button id="view-btn" style="width:100%;padding:11px;background:#2d9566;color:#fff;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer;font-family:DM Sans,sans-serif">View Only Access</button>'
+    + '</div>'
+    + '<div id="login-err" style="color:#c0392b;font-size:12px;margin-top:12px;display:none"></div>'
     + '</div></div>';
   setTimeout(function(){
     var btn=document.getElementById('login-btn');
     var pass=document.getElementById('login-pass');
+    var vbtn=document.getElementById('view-btn');
+    var vpass=document.getElementById('view-pass');
     if(btn) btn.addEventListener('click', doFirebaseLogin);
     if(pass) pass.addEventListener('keydown', function(e){if(e.key==='Enter') doFirebaseLogin();});
+    if(vbtn) vbtn.addEventListener('click', doViewerLogin);
+    if(vpass) vpass.addEventListener('keydown', function(e){if(e.key==='Enter') doViewerLogin();});
   },100);
+}
+
+function switchTab(tab) {
+  var af=document.getElementById('admin-form');
+  var vf=document.getElementById('view-form');
+  var ta=document.getElementById('tab-admin');
+  var tv=document.getElementById('tab-view');
+  var err=document.getElementById('login-err');
+  if(err) err.style.display='none';
+  if(tab==='admin'){
+    af.style.display='block'; vf.style.display='none';
+    ta.style.background='#1a3a6b'; ta.style.color='#fff';
+    tv.style.background='#e8eef5'; tv.style.color='#1a3a6b';
+  } else {
+    af.style.display='none'; vf.style.display='block';
+    tv.style.background='#2d9566'; tv.style.color='#fff';
+    ta.style.background='#e8eef5'; ta.style.color='#1a3a6b';
+  }
+}
+
+var VIEWER_PASS = '112233';
+var IS_VIEWER = false;
+
+function doViewerLogin() {
+  var pass=document.getElementById('view-pass').value;
+  var err=document.getElementById('login-err');
+  if(pass===VIEWER_PASS){
+    sessionStorage.setItem('dea-viewer','yes');
+    location.reload();
+  } else {
+    err.textContent='Wrong viewer password!';
+    err.style.display='block';
+  }
 }
 
 function doFirebaseLogin() {
@@ -1920,10 +2008,17 @@ function doFirebaseLogin() {
 }
 
 function logout() {
-  auth.signOut().then(function(){ location.reload(); });
+  if(IS_VIEWER){
+    sessionStorage.removeItem('dea-viewer');
+    location.reload();
+  } else {
+    auth.signOut().then(function(){ location.reload(); });
+  }
 }
 
 function changePasswordUI() {
+  if(viewerBlock()) return;
+
   var curr=document.getElementById('cp-curr').value;
   var np=document.getElementById('cp-new').value;
   var conf=document.getElementById('cp-conf').value;
@@ -1946,6 +2041,61 @@ function changePasswordUI() {
 }
 
 var LOGO_SRC = '';
+
+function viewerBlock() {
+  if(IS_VIEWER){ alert('View Only mode — editing is not allowed!'); return true; }
+  return false;
+}
+
+function applyViewerMode() {
+  // Add VIEW ONLY badge in header
+  var hdr=document.querySelector('header');
+  if(hdr && !document.getElementById('viewer-badge')){
+    var badge=document.createElement('div');
+    badge.id='viewer-badge';
+    badge.textContent='VIEW ONLY';
+    badge.style.cssText='background:#2d9566;color:#fff;padding:4px 12px;border-radius:6px;font-size:11px;font-weight:700;margin-left:8px;letter-spacing:.5px';
+    var logoutBtn=hdr.querySelector('button');
+    if(logoutBtn) hdr.insertBefore(badge, logoutBtn);
+    else hdr.appendChild(badge);
+  }
+  // Inject CSS to hide all action buttons
+  var style=document.createElement('style');
+  style.id='viewer-style';
+  style.textContent=`
+    /* Hide add/edit/delete buttons and forms in viewer mode */
+    .btn.bp:not(#login-btn):not(#view-btn),
+    .btn.bg2, .btn.br,
+    button[onclick*="add"], button[onclick*="Add"],
+    button[onclick*="del"], button[onclick*="Del"],
+    button[onclick*="save"], button[onclick*="Save"],
+    button[onclick*="collect"], button[onclick*="Collect"],
+    button[onclick*="open"], button[onclick*="settle"],
+    button[onclick*="Settle"], button[onclick*="confirm"],
+    button[onclick*="import"], button[onclick*="cleanup"],
+    button[onclick*="changePassword"], button[onclick*="generateVouchers"],
+    button[onclick*="autoFill"], button[onclick*="saveRegNos"] {
+      display: none !important;
+    }
+    /* Hide entire add-forms (cards with input fields for adding) */
+    #pg-students > .card:first-of-type,
+    #pg-staff > .card:first-of-type,
+    #pg-expenses > .card:first-of-type,
+    #pg-admission > .card:first-of-type {
+      display: none !important;
+    }
+    /* Keep print, show, receipt, whatsapp buttons visible */
+    button[onclick*="print"], button[onclick*="Print"],
+    button[onclick*="render"], button[onclick*="show"],
+    button[onclick*="Rcpt"], button[onclick*="Slip"],
+    button[onclick*="WhatsApp"], button[onclick*="gen"],
+    button[onclick*="History"], button[onclick*="Payables"] {
+      display: inline-block !important;
+    }
+  `;
+  document.head.appendChild(style);
+}
+
 
 function sleep(ms){return new Promise(function(r){setTimeout(r,ms);});}
 async function doPrint() {
@@ -1976,15 +2126,23 @@ async function doPrint() {
 var _logoEl = document.querySelector('img.logo');
 if(_logoEl) LOGO_SRC = _logoEl.src;
 
-// Check Firebase auth state
-auth.onAuthStateChanged(function(user){
-  if(user){
-    initDate();
-    loadFromFirebase();
-  } else {
-    showLoginScreen();
-  }
-});
+// Check viewer mode first
+if(sessionStorage.getItem('dea-viewer')==='yes'){
+  IS_VIEWER = true;
+  initDate();
+  loadFromFirebase();
+} else {
+  // Check Firebase auth state
+  auth.onAuthStateChanged(function(user){
+    if(user){
+      IS_VIEWER = false;
+      initDate();
+      loadFromFirebase();
+    } else {
+      showLoginScreen();
+    }
+  });
+}
 
 </script>
 </body>
