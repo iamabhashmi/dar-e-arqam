@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260601030818 -->
+<!-- v20260601041841 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
+
 
 
 
@@ -87,6 +89,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .wb{background:var(--red-p);border:1px solid #f5c6c2;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:12px;color:var(--red)}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}}
+
+
 
 
 
@@ -236,6 +240,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
     <div class="ct">Add Staff Member</div>
     <div class="fr"><div class="fg"><label>Full Name *</label><input id="tn" placeholder="Staff name"></div><div class="fg"><label>Designation *</label><input id="tr" placeholder="e.g. Teacher"></div></div>
     <div class="fr"><div class="fg"><label>Monthly Salary (Rs.) *</label><input id="tsal" type="number"></div><div class="fg"><label>Phone</label><input id="tph" placeholder="03xxxxxxxxx"></div></div>
+    <div class="fr"><div class="fg"><label>Opening Salary Arrears (Rs.)</label><input id="topenarr" type="number" value="0" placeholder="Pending salary before software"></div><div class="fg"></div></div>
     <div id="a-st" class="al"></div>
     <button class="btn bp" onclick="addStaff()">Add Staff</button>
   </div>
@@ -557,6 +562,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
     <input type="hidden" id="est-id">
     <div class="fr"><div class="fg"><label>Full Name</label><input id="est-n"></div><div class="fg"><label>Designation</label><input id="est-r"></div></div>
     <div class="fr"><div class="fg"><label>Salary (Rs.)</label><input id="est-sal" type="number"></div><div class="fg"><label>Phone</label><input id="est-ph"></div></div>
+    <div class="fr"><div class="fg"><label>Opening Salary Arrears (Rs.)</label><input id="est-openarr" type="number" value="0"></div><div class="fg"><label>Salary Tracking From</label><select id="est-salstart"><option value="">-- Auto --</option></select></div></div>
+    <p style="font-size:11px;color:var(--ink-m);margin:-4px 0 8px">Set tracking start month — unpaid months after this auto-add to arrears.</p>
     <div id="a-est" class="al"></div>
     <div class="brow"><button class="btn bp" onclick="saveStaff()">Save Changes</button><button class="btn bo" onclick="CM('ov-est')">Cancel</button></div>
   </div>
@@ -673,7 +680,27 @@ function fmt(n) { return 'Rs. ' + Number(n||0).toLocaleString(); }
 function GA(id) { var s=DB.students.find(function(x){return x.id===id;}); return s?parseFloat(s.arr||0):0; }
 function GSA(id) {
   var total=0;
+  // 1. Partial balances from any month
   DB.salaries.forEach(function(r){ if(r.sid===id&&r.partial&&r.balance>0) total+=parseFloat(r.balance||0); });
+  // 2. Manual opening arrears (pending before software)
+  var st=DB.staff.find(function(x){return x.id===id;});
+  if(st&&st.openArr) total+=parseFloat(st.openArr||0);
+  // 3. Completely skipped (unpaid) past months — count full salary
+  if(st&&st.salaryStart){
+    var now=new Date();
+    var curY=now.getFullYear(), curM=now.getMonth();
+    var parts=st.salaryStart.split('-'); // format: MonAbbrev-Year
+    var startM=MONTHS.indexOf(parts[0]), startY=parseInt(parts[1]);
+    if(startM>=0){
+      var y=startY, m=startM;
+      while(y<curY || (y===curY && m<curM)){ // only PAST months, not current
+        var k=MONTHS[m]+'-'+y;
+        var rec=DB.salaries.find(function(r){return r.sid===id&&r.key===k;});
+        if(!rec) total+=parseFloat(st.salary||0); // skipped month = full salary owed
+        m++; if(m>11){m=0;y++;}
+      }
+    }
+  }
   return total;
 }
 function CM(id) { document.getElementById(id).classList.remove('on'); }
@@ -1053,10 +1080,11 @@ function showAnRcpt(sid,yr) {
 function addStaff() {
   if(viewerBlock()) return;
 
-  var name=GV('tn'),role=GV('tr'),sal=GN('tsal'),ph=GV('tph');
+  var name=GV('tn'),role=GV('tr'),sal=GN('tsal'),ph=GV('tph'),openArr=GN('topenarr')||0;
   if(!name||!role||!sal){showAlert('a-st','Fill required fields',true);return;}
-  var ns={id:uid(),name:name,role:role,salary:sal,phone:ph};
-  DB.staff.push(ns); save(); syncToFB('staff',ns);['tn','tr','tsal','tph'].forEach(function(id){G(id).value='';});
+  var d=new Date();
+  var ns={id:uid(),name:name,role:role,salary:sal,phone:ph,openArr:openArr,salaryStart:MONTHS[d.getMonth()]+'-'+d.getFullYear()};
+  DB.staff.push(ns); save(); syncToFB('staff',ns);['tn','tr','tsal','tph','topenarr'].forEach(function(id){var e=G(id);if(e)e.value='';});
   logActivity('Staff','Staff added: '+name+' | '+role);
   showAlert('a-st',name+' added!'); renderStaff(); updateDash();
 }
@@ -1081,15 +1109,31 @@ function delStaff(id) {
 function openEST(id) {
   var s=DB.staff.find(function(x){return x.id===id;}); if(!s) return;
   G('est-id').value=s.id; G('est-n').value=s.name; G('est-r').value=s.role;
-  G('est-sal').value=s.salary; G('est-ph').value=s.phone||''; OM('ov-est');
+  G('est-sal').value=s.salary; G('est-ph').value=s.phone||'';
+  if(G('est-openarr')) G('est-openarr').value=s.openArr||0;
+  // Populate salary start dropdown
+  var sel=G('est-salstart');
+  if(sel){
+    sel.innerHTML='<option value="">-- Auto --</option>';
+    var years=[2024,2025,2026,2027];
+    years.forEach(function(y){
+      MONTHS.forEach(function(m){
+        sel.innerHTML+='<option value="'+m+'-'+y+'">'+m+' '+y+'</option>';
+      });
+    });
+    sel.value=s.salaryStart||'';
+  }
+  OM('ov-est');
 }
 function saveStaff() {
   if(viewerBlock()) return;
 
-  var id=GV('est-id'),name=GV('est-n'),role=GV('est-r'),sal=GN('est-sal'),ph=GV('est-ph');
+  var id=GV('est-id'),name=GV('est-n'),role=GV('est-r'),sal=GN('est-sal'),ph=GV('est-ph'),openArr=GN('est-openarr')||0,salStart=GV('est-salstart');
   if(!name||!role||!sal){showAlert('a-est','Fill all fields',true);return;}
   var idx=DB.staff.findIndex(function(x){return x.id===id;}); if(idx===-1) return;
-  DB.staff[idx]=Object.assign({},DB.staff[idx],{name:name,role:role,salary:sal,phone:ph});
+  var upd={name:name,role:role,salary:sal,phone:ph,openArr:openArr};
+  if(salStart) upd.salaryStart=salStart;
+  DB.staff[idx]=Object.assign({},DB.staff[idx],upd);
   save(); syncToFB('staff',DB.staff[idx]); CM('ov-est'); renderStaff(); updateDash();
 }
 
@@ -1119,8 +1163,10 @@ function openPS(sid,key) {
   var s=DB.staff.find(function(x){return x.id===sid;});
   var ex=DB.salaries.find(function(r){return r.sid===sid&&r.key===key;});
   var alreadyPaid=ex?parseFloat(ex.paid||0):0;
-  var prevArr=0;
-  DB.salaries.forEach(function(r){if(r.sid===sid&&r.key!==key&&r.partial&&r.balance>0) prevArr+=parseFloat(r.balance||0);});
+  // Total arrears from GSA (partial balances + opening arrears)
+  var prevArr=GSA(sid);
+  // If this month already has a partial record, its balance is part of GSA — subtract to avoid double
+  if(ex&&ex.partial) prevArr-=parseFloat(ex.balance||0);
   var totalDue=parseFloat(s.salary)+prevArr-alreadyPaid;
   _psid=sid;_pskey=key;
   G('ps-info').innerHTML='<strong>'+s.name+'</strong> | '+s.role+(alreadyPaid>0?' | Already Paid: <strong>'+fmt(alreadyPaid)+'</strong>':'');
@@ -1128,52 +1174,58 @@ function openPS(sid,key) {
   G('ps-due').textContent=fmt(Math.max(0,totalDue));
   G('ps-amt').value=''; G('ps-res').style.display='none'; OM('ov-ps');
 }
+
 function psUpdate() {
   var s=DB.staff.find(function(x){return x.id===_psid;});
   var ex=DB.salaries.find(function(r){return r.sid===_psid&&r.key===_pskey;});
   var alreadyPaid=ex?parseFloat(ex.paid||0):0;
-  var prevArr=0;
-  DB.salaries.forEach(function(r){if(r.sid===_psid&&r.key!==_pskey&&r.partial&&r.balance>0) prevArr+=parseFloat(r.balance||0);});
+  var prevArr=GSA(_psid);
+  if(ex&&ex.partial) prevArr-=parseFloat(ex.balance||0);
   var totalDue=parseFloat(s.salary)+prevArr,rem=totalDue-alreadyPaid;
   var rec=GN('ps-amt'),bal=rem-rec;
   G('ps-rec').textContent=fmt(rec); G('ps-bal').textContent=bal>0?fmt(bal):'Fully Paid';
   G('ps-bal').style.color=bal>0?'var(--red)':'var(--green-l)'; G('ps-res').style.display='block';
 }
+
 function confirmSal() {
   if(viewerBlock()) return;
-
   var s=DB.staff.find(function(x){return x.id===_psid;});
   var ex=DB.salaries.find(function(r){return r.sid===_psid&&r.key===_pskey;});
   var alreadyPaid=ex?parseFloat(ex.paid||0):0;
-  var prevArr=0;
-  DB.salaries.forEach(function(r){
-    if(r.sid===_psid&&r.key!==_pskey&&r.partial&&r.balance>0) prevArr+=parseFloat(r.balance||0);
-  });
+  var prevArr=GSA(_psid);
+  if(ex&&ex.partial) prevArr-=parseFloat(ex.balance||0);
   var totalDue=parseFloat(s.salary)+prevArr;
   var rem=totalDue-alreadyPaid;
   var rec=GN('ps-amt');
   if(!rec||rec<=0){showAlert('a-ps','Enter amount paid',true);return;}
-  if(rec>rem){showAlert('a-ps','Amount exceeds remaining: '+fmt(rem),true);return;}
+  if(rec>rem){
+    if(!confirm('Amount ('+fmt(rec)+') exceeds remaining ('+fmt(rem)+'). Continue?')) return;
+  }
   var totalPaid=alreadyPaid+rec;
   var bal=Math.max(0,totalDue-totalPaid);
   var full=bal<=0;
   var rno=ex?ex.rno:'S-'+Date.now().toString().slice(-5);
   var now=new Date().toISOString();
-
-  // Track each payment transaction
+  // Track how much went toward opening arrears (reduce it permanently)
+  var openArrReduce=0;
+  var sidx=DB.staff.findIndex(function(x){return x.id===_psid;});
+  if(sidx!==-1 && DB.staff[sidx].openArr>0){
+    // Reduce opening arrears by the payment, capped at openArr value
+    var curOpen=parseFloat(DB.staff[sidx].openArr||0);
+    openArrReduce=Math.min(rec, curOpen);
+    DB.staff[sidx].openArr=Math.max(0, curOpen-rec);
+  }
   var payments=(ex&&ex.payments)?ex.payments.slice():[];
   payments.push({date:now, amount:rec});
-
   DB.salaries=DB.salaries.filter(function(r){return!(r.sid===_psid&&r.key===_pskey);});
-
   var salRec={id:rno,sid:_psid,key:_pskey,amount:s.salary,arrears:prevArr,
     total_due:totalDue,paid:totalPaid,balance:bal,partial:!full,
     date:now,rno:rno,payments:payments};
   DB.salaries.push(salRec);
-
   logActivity('Salary','Salary: '+s.name+' | '+_pskey,rec);
   save();
   syncToFB('salaries',salRec);
+  if(sidx!==-1) syncToFB('staff',DB.staff[sidx]);
   db.ref('salaries').orderByChild('sid').equalTo(_psid).once('value').then(function(snap){
     var data=snap.val()||{};
     Object.keys(data).forEach(function(k){
