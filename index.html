@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260601182817 -->
+<!-- v20260601184309 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -58,10 +59,16 @@ nav::-webkit-scrollbar{height:0}
 .pg{display:none;padding:16px;max-width:900px;margin:0 auto}.pg.on{display:block}
 .card{background:#fff;border-radius:12px;padding:18px;box-shadow:var(--sh);border:1px solid var(--bdr);margin-bottom:14px}
 .ct{font-family:"Playfair Display",serif;font-size:15px;font-weight:600;color:var(--blue);margin-bottom:12px}
-.sg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px}
-.sc{background:#fff;border-radius:10px;padding:14px;border:1px solid var(--bdr);box-shadow:var(--sh)}
-.sl{font-size:9px;color:var(--ink-m);font-weight:600;letter-spacing:.5px;text-transform:uppercase;margin-bottom:4px}
-.sv{font-family:"DM Mono",monospace;font-size:17px;font-weight:500}
+.sg{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:20px}
+.sc{background:#fff;border-radius:14px;padding:16px;border:1px solid var(--bdr);box-shadow:var(--sh);display:flex;align-items:center;gap:12px;transition:transform .2s,box-shadow .2s;position:relative;overflow:hidden}
+.sc:hover{transform:translateY(-2px);box-shadow:var(--sh-l)}
+.sc::before{content:'';position:absolute;left:0;top:0;bottom:0;width:4px;background:var(--blue)}
+.sc-blue::before{background:var(--blue-l)}.sc-green::before{background:var(--green-l)}.sc-red::before{background:var(--red)}.sc-gold::before{background:var(--gold)}
+.sc-ic{font-size:24px;width:46px;height:46px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:var(--blue-p);flex-shrink:0}
+.sc-green .sc-ic{background:var(--green-p)}.sc-red .sc-ic{background:var(--red-p)}.sc-gold .sc-ic{background:#fdf6e8}
+.sc-body{flex:1;min-width:0}
+.sl{font-size:10px;color:var(--ink-m);font-weight:600;letter-spacing:.4px;text-transform:uppercase;margin-bottom:5px;line-height:1.3}
+.sv{font-family:"DM Mono",monospace;font-size:19px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sv.g{color:var(--green-l)}.sv.r{color:var(--red)}.sv.gold{color:var(--gold)}
 .fg{margin-bottom:10px}
 label{display:block;font-size:11px;font-weight:600;color:var(--ink-s);margin-bottom:3px;letter-spacing:.3px}
@@ -69,7 +76,9 @@ input,select{width:100%;padding:8px 11px;border:1.5px solid var(--bdr);border-ra
 input:focus,select:focus{border-color:var(--blue);background:#fff}
 input[readonly]{background:#f0f0f0;color:var(--ink-m)}
 .fr{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.btn{padding:9px 18px;border-radius:7px;border:none;cursor:pointer;font-size:12px;font-weight:600;font-family:"DM Sans",sans-serif;transition:all .18s}
+.btn{padding:10px 20px;border-radius:9px;border:none;cursor:pointer;font-size:12px;font-weight:600;font-family:"DM Sans",sans-serif;transition:transform .15s,box-shadow .15s,background .15s,opacity .15s}
+.btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(26,58,107,.18)}
+.btn:active{transform:translateY(0);opacity:.9}
 .bp{background:var(--blue);color:#fff}.bp:hover{background:var(--blue-l)}.bg2{background:var(--gold);color:#fff}
 .bo{background:transparent;border:1.5px solid var(--blue);color:var(--blue)}.bo:hover{background:var(--blue-p)}.br{background:var(--red);color:#fff}
 .sm{padding:5px 10px;font-size:11px}.brow{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}.tw{overflow-x:auto}
@@ -96,7 +105,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .ib{background:var(--blue-p);border:1px solid #b2c8e8;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:12px;color:var(--blue)}
 .wb{background:var(--red-p);border:1px solid #f5c6c2;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:12px;color:var(--red)}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
-@media(max-width:480px){.fr{grid-template-columns:1fr}}
+@media(max-width:480px){.fr{grid-template-columns:1fr}
+.sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -170,14 +181,14 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 <div class="pg on" id="pg-dashboard">
   <div class="st">Dashboard</div><div class="ss">Welcome back, <strong>AB Hashmi</strong></div>
   <div class="sg">
-    <div class="sc"><div class="sl">Students</div><div class="sv" id="d-s">0</div></div>
-    <div class="sc"><div class="sl">Staff</div><div class="sv" id="d-st">0</div></div>
-    <div class="sc"><div class="sl">Fees Collected</div><div class="sv g" id="d-f">Rs. 0</div></div>
-    <div class="sc"><div class="sl">Expenses</div><div class="sv r" id="d-e">Rs. 0</div></div>
-    <div class="sc"><div class="sl">Total Arrears</div><div class="sv gold" id="d-a">Rs. 0</div></div>
-    <div class="sc"><div class="sl">Net Balance (This Month)</div><div class="sv g" id="d-b">Rs. 0</div></div>
-    <div class="sc"><div class="sl">All-Time Balance</div><div class="sv g" id="d-ab">Rs. 0</div></div>
-    <div class="sc"><div class="sl">All-Time Expenses</div><div class="sv r" id="d-ae">Rs. 0</div></div>
+    <div class="sc sc-blue"><div class="sc-ic">👨‍🎓</div><div class="sc-body"><div class="sl">Students</div><div class="sv" id="d-s">0</div></div></div>
+    <div class="sc sc-blue"><div class="sc-ic">👥</div><div class="sc-body"><div class="sl">Staff</div><div class="sv" id="d-st">0</div></div></div>
+    <div class="sc sc-green"><div class="sc-ic">💰</div><div class="sc-body"><div class="sl">Fees Collected</div><div class="sv g" id="d-f">Rs. 0</div></div></div>
+    <div class="sc sc-red"><div class="sc-ic">🧾</div><div class="sc-body"><div class="sl">Expenses</div><div class="sv r" id="d-e">Rs. 0</div></div></div>
+    <div class="sc sc-gold"><div class="sc-ic">⏳</div><div class="sc-body"><div class="sl">Total Arrears</div><div class="sv gold" id="d-a">Rs. 0</div></div></div>
+    <div class="sc sc-green"><div class="sc-ic">📊</div><div class="sc-body"><div class="sl">Net Balance (This Month)</div><div class="sv g" id="d-b">Rs. 0</div></div></div>
+    <div class="sc sc-green"><div class="sc-ic">🏦</div><div class="sc-body"><div class="sl">All-Time Balance</div><div class="sv g" id="d-ab">Rs. 0</div></div></div>
+    <div class="sc sc-red"><div class="sc-ic">📉</div><div class="sc-body"><div class="sl">All-Time Expenses</div><div class="sv r" id="d-ae">Rs. 0</div></div></div>
   </div>
   <div class="card"><div class="ct">Pending This Month</div><div id="d-pl"></div></div>
 </div>
