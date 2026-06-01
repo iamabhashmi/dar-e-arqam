@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260601181036 -->
+<!-- v20260601182817 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
+
 
 
 
@@ -95,6 +97,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .wb{background:var(--red-p);border:1px solid #f5c6c2;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:12px;color:var(--red)}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}}
+
+
 
 
 
@@ -659,6 +663,7 @@ function loadFromFirebase() {
     DB.adm      = objToArr(data.adm);
     DB.summer   = objToArr(data.summer);
     DB.log      = objToArr(data.log);
+    DB.payInfo  = data.payInfo || {};
     showLoading(false);
     updateDash(); updateStats(); checkFeeAlert();
     renderStudents();
@@ -1642,11 +1647,11 @@ function getPaymentTextWA() {
 function getPaymentTextHTML() {
   var pd=DB.payInfo||{};
   var lines=[];
-  if(pd.jc) lines.push('JazzCash: '+pd.jc+(pd.jcName?' ('+pd.jcName+')':''));
-  if(pd.ep) lines.push('EasyPaisa: '+pd.ep+(pd.epName?' ('+pd.epName+')':''));
-  if(pd.bank&&pd.bankAcc) lines.push('Bank: '+pd.bank+' - '+pd.bankAcc+(pd.bankName?' ('+pd.bankName+')':''));
+  if(pd.jc) lines.push('<strong>JazzCash:</strong> '+pd.jc+(pd.jcName?' ('+pd.jcName+')':''));
+  if(pd.ep) lines.push('<strong>EasyPaisa:</strong> '+pd.ep+(pd.epName?' ('+pd.epName+')':''));
+  if(pd.bank&&pd.bankAcc) lines.push('<strong>Bank:</strong> '+pd.bank+' - '+pd.bankAcc+(pd.bankName?' ('+pd.bankName+')':''));
   if(!lines.length) return '';
-  return '<div style="margin-top:4px;padding-top:4px;border-top:1px dashed #999;font-size:8px"><strong>Payment:</strong> '+lines.join(' | ')+'</div>';
+  return '<div style="margin-top:5px;padding-top:5px;border-top:1px dashed #999;font-size:9.5px;line-height:1.6"><strong style="font-size:10px">Payment Methods:</strong><br>'+lines.join('<br>')+'</div>';
 }
 
 function sendWhatsApp(sid, mo) {
@@ -1969,7 +1974,7 @@ function generateVouchers() {
     }
     pages+='</div>';
   }
-  var html='<div class="card" style="padding:12px"><div style="font-size:13px;color:var(--ink-s);margin-bottom:10px">Generated <strong>'+list.length+'</strong> vouchers</div><div id="voucher-print-area">'+pages+'</div><div class="brow" style="margin-top:14px"><button class="btn bp" onclick="printVouchers()">Print All Vouchers (A4)</button></div></div>';
+  var html='<div class="card" style="padding:12px"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;flex-wrap:wrap;gap:8px"><div style="font-size:13px;color:var(--ink-s)">Generated <strong>'+list.length+'</strong> vouchers</div><button class="btn bp" onclick="printVouchers()">Print All Vouchers (A4)</button></div><div id="voucher-print-area">'+pages+'</div><div class="brow" style="margin-top:14px"><button class="btn bp" onclick="printVouchers()">Print All Vouchers (A4)</button></div></div>';
   G('voucher-output').innerHTML=html;
 }
 function printVouchers() {
