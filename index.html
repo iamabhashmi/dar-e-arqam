@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260601041841 -->
+<!-- v20260601044835 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
+
 
 
 
@@ -89,6 +91,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .wb{background:var(--red-p);border:1px solid #f5c6c2;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:12px;color:var(--red)}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}}
+
+
 
 
 
@@ -1053,11 +1057,35 @@ function renderAnnual() {
   var rows='';
   for(var i=0;i<DB.students.length;i++){
     var s=DB.students[i];
-    var rec=DB.annual.find(function(x){return x.sid===s.id&&x.yr===yr;}),paid=!!rec;
-    rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.cls+'</td><td>'+fmt(amt)+'</td><td><span class="bx '+(paid?'bg':'bd')+'">'+(paid?'Paid':'Unpaid')+'</span></td><td>'+(!paid?'<button class="btn bp sm" data-id="'+s.id+'" data-yr="'+yr+'" onclick="collectAnnual(this.dataset.id,this.dataset.yr)">Collect</button>':'<button class="btn bo sm" data-id="'+s.id+'" data-yr="'+yr+'" onclick="showAnRcpt(this.dataset.id,this.dataset.yr)">Receipt</button>')+'</td></tr>';
+    var rec=DB.annual.find(function(x){return x.sid===s.id&&x.yr===yr;});
+    var statusCell, actionCell;
+    if(!rec){
+      statusCell='<span class="bx bd">Unpaid</span>';
+      actionCell='<div style="display:flex;gap:4px"><button class="btn bp sm" data-id="'+s.id+'" data-yr="'+yr+'" onclick="collectAnnual(this.dataset.id,this.dataset.yr)">Collect</button><button class="btn bo sm" data-id="'+s.id+'" data-yr="'+yr+'" onclick="settleAnnualFund(this.dataset.id,this.dataset.yr)">Settle</button></div>';
+    } else if(rec.settled){
+      statusCell='<span class="bx bo2">Settled</span>';
+      actionCell='<span style="font-size:11px;color:var(--ink-m)">In arrears</span>';
+    } else {
+      statusCell='<span class="bx bg">Paid</span>';
+      actionCell='<button class="btn bo sm" data-id="'+s.id+'" data-yr="'+yr+'" onclick="showAnRcpt(this.dataset.id,this.dataset.yr)">Receipt</button>';
+    }
+    rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.cls+'</td><td>'+fmt(amt)+'</td><td>'+statusCell+'</td><td>'+actionCell+'</td></tr>';
   }
   tb.innerHTML=rows;
 }
+
+function settleAnnualFund(sid, yr) {
+  if(viewerBlock()) return;
+  var s=DB.students.find(function(x){return x.id===sid;});
+  if(!confirm('Mark Annual Fund as settled for '+s.name+'? (Already in arrears — will NOT add to revenue)')) return;
+  if(!DB.annual) DB.annual=[];
+  var rec={id:uid(),sid:sid,yr:yr,amount:0,settled:true,date:new Date().toISOString(),rno:'AN-SETTLED'};
+  DB.annual.push(rec);
+  save(); syncToFB('annual',rec);
+  logActivity('Annual','Annual fund SETTLED (in arrears) for '+s.name+' | '+yr,0);
+  renderAnnual();
+}
+
 function collectAnnual(sid,yr) {
   if(viewerBlock()) return;
 
@@ -1429,6 +1457,17 @@ function initPayables() {
   var d=new Date();
   G('pay-mo').value=MONTHS[d.getMonth()];
   G('pay-yr').value=String(d.getFullYear());
+  // Sync session dropdown to match where summer/annual were collected
+  // Use the most common session from existing records
+  var sessions={};
+  (DB.summer||[]).forEach(function(x){if(x.yr)sessions[x.yr]=(sessions[x.yr]||0)+1;});
+  (DB.annual||[]).forEach(function(x){if(x.yr)sessions[x.yr]=(sessions[x.yr]||0)+1;});
+  var topSession='', maxCount=0;
+  Object.keys(sessions).forEach(function(k){if(sessions[k]>maxCount){maxCount=sessions[k];topSession=k;}});
+  if(topSession && G('pay-session')){
+    var opt=G('pay-session').querySelector('option[value="'+topSession+'"]');
+    if(opt) G('pay-session').value=topSession;
+  }
 }
 
 function getSummerPrice2(cls) {
