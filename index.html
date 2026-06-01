@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260530045033 -->
+<!-- v20260601030818 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -86,6 +87,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .wb{background:var(--red-p);border:1px solid #f5c6c2;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:12px;color:var(--red)}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}}
+
 
 
 
@@ -343,6 +345,10 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
     <div class="fr">
       <div class="fg"><label>Late Fee (Rs.)</label><input id="vlate" type="number" value="150"></div>
       <div class="fg"><label>Message</label><input id="vmsg" placeholder="Optional message"></div>
+    </div>
+    <div class="fg" style="display:flex;align-items:center;gap:10px;background:var(--org-p);padding:10px;border-radius:8px;border:1px solid #f5c6a0">
+      <input type="checkbox" id="vsummer" style="width:18px;height:18px;cursor:pointer;flex-shrink:0">
+      <label for="vsummer" style="margin:0;cursor:pointer;color:var(--org);font-size:13px;font-weight:600">Include Summer Pack charges in voucher (auto by class: PG/Nur/Prep Rs.1000, One-Five Rs.1200, Six Rs.1500)</label>
     </div>
     <div class="brow" style="margin-top:12px">
       <button class="btn bp" onclick="generateVouchers()">Generate Vouchers</button>
@@ -1704,6 +1710,7 @@ function saveRegNos() {
 function generateVouchers() {
   var mo=GV('vmo'),yr=GV('vyr'),cls=GV('vcls'),due=GV('vdue')||'7';
   var exam=GN('vexam'),other=GN('vother'),late=GN('vlate')||150,msg=GV('vmsg');
+  var incSummer=G('vsummer')&&G('vsummer').checked;
   var list=DB.students.filter(function(s){return !cls||s.cls===cls;});
   if(!list.length){G('voucher-output').innerHTML='<div class="card"><div class="empty">No students found</div></div>';return;}
   var dueDate=due+'/'+String(MONTHS.indexOf(mo)+1).padStart(2,'0')+'/'+yr;
@@ -1713,7 +1720,16 @@ function generateVouchers() {
   for(var i=0;i<list.length;i++){
     var s=list[i];
     var arr=parseFloat(s.arr||0),fee=parseFloat(s.fee||0);
-    var total=arr+fee+exam+other,totalLate=total+late;
+    var summerAmt=0;
+    if(incSummer){
+      var spr=(DB.summer||[]).find(function(x){return x.sid===s.id;});
+      if(!spr){ // only add if not already paid
+        if(s.cls==='PG'||s.cls==='Nursery'||s.cls==='Prep') summerAmt=1000;
+        else if(s.cls==='Six') summerAmt=1500;
+        else summerAmt=1200;
+      }
+    }
+    var total=arr+fee+exam+other+summerAmt,totalLate=total+late;
     pages+='<div class="vpage" style="display:flex;gap:0;page-break-after:always;margin-bottom:16px">';
     for(var j=0;j<3;j++){
       var cl=copyLabels[j];
@@ -1735,6 +1751,7 @@ function generateVouchers() {
       pages+='<tr><td style="border:1px solid #333;padding:3px;text-align:center">1</td><td style="border:1px solid #333;padding:3px">Tuition Fee</td><td style="border:1px solid #333;padding:3px;text-align:right">'+fee.toLocaleString()+'</td></tr>';
       pages+='<tr><td style="border:1px solid #333;padding:3px;text-align:center">2</td><td style="border:1px solid #333;padding:3px">Exam Fee / Annual Fund</td><td style="border:1px solid #333;padding:3px;text-align:right">'+(exam>0?exam.toLocaleString():'0000')+'</td></tr>';
       pages+='<tr><td style="border:1px solid #333;padding:3px;text-align:center">3</td><td style="border:1px solid #333;padding:3px">Other Charges</td><td style="border:1px solid #333;padding:3px;text-align:right">'+(other>0?other.toLocaleString():'0000')+'</td></tr>';
+      if(incSummer&&summerAmt>0) pages+='<tr><td style="border:1px solid #333;padding:3px;text-align:center">4</td><td style="border:1px solid #333;padding:3px">Summer Pack</td><td style="border:1px solid #333;padding:3px;text-align:right">'+summerAmt.toLocaleString()+'</td></tr>';
       pages+='<tr style="background:#f9f9f9"><td style="border:1px solid #333;padding:3px;font-weight:700" colspan="2">Total Payable by '+dueDate+'</td><td style="border:1px solid #333;padding:3px;text-align:right;font-weight:700">'+total.toLocaleString()+'</td></tr>';
       pages+='<tr style="background:#f9f9f9"><td style="border:1px solid #333;padding:3px;font-weight:700" colspan="2">Total Payable After '+dueDate+'</td><td style="border:1px solid #333;padding:3px;text-align:right;font-weight:700">'+totalLate.toLocaleString()+'</td></tr>';
       pages+='</table>';
