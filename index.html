@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260601044835 -->
+<!-- v20260601114537 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -91,6 +92,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .wb{background:var(--red-p);border:1px solid #f5c6c2;border-radius:7px;padding:9px 11px;margin-bottom:10px;font-size:12px;color:var(--red)}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}}
+
 
 
 
@@ -1576,8 +1578,24 @@ function sendWhatsApp(sid, mo) {
   var s=DB.students.find(function(x){return x.id===sid;});
   if(!s||!s.phone){alert('No phone number for this student!');return;}
   var arr=GA(s.id);
-  var totalDue=parseFloat(s.fee)+arr;
+  var fee=parseFloat(s.fee)||0;
   var due=GV('dfdue')||'7';
+  // Get current session (most used from existing records)
+  var sessions={};
+  (DB.summer||[]).forEach(function(x){if(x.yr)sessions[x.yr]=(sessions[x.yr]||0)+1;});
+  (DB.annual||[]).forEach(function(x){if(x.yr)sessions[x.yr]=(sessions[x.yr]||0)+1;});
+  var session='', maxC=0;
+  Object.keys(sessions).forEach(function(k){if(sessions[k]>maxC){maxC=sessions[k];session=k;}});
+  if(!session) session='2025-26';
+  // Summer pack due (only if not paid/settled)
+  var summerDue=0;
+  var sumRec=(DB.summer||[]).find(function(x){return x.sid===s.id&&x.yr===session;});
+  if(!sumRec) summerDue=getSummerPrice2(s.cls);
+  // Annual fund due (only if not paid/settled)
+  var annualDue=0;
+  var anRec=(DB.annual||[]).find(function(x){return x.sid===s.id&&x.yr===session;});
+  if(!anRec) annualDue=2000;
+  var totalDue=fee+arr+summerDue+annualDue;
   // Format phone — convert 03xx to 92xx for WhatsApp
   var phone=s.phone.replace(/[^0-9]/g,'');
   if(phone.charAt(0)==='0') phone='92'+phone.substring(1);
@@ -1588,8 +1606,10 @@ function sendWhatsApp(sid, mo) {
   msg+='This is a fee reminder from *Dar-e-Arqam School* (Haveli Lakha Campus).\n\n';
   msg+='*Student:* '+s.name+'\n';
   msg+='*Class:* '+s.cls+'\n';
-  msg+='*Monthly Fee:* Rs. '+parseFloat(s.fee).toLocaleString()+'\n';
+  msg+='*Monthly Fee:* Rs. '+fee.toLocaleString()+'\n';
   if(arr>0) msg+='*Arrears:* Rs. '+arr.toLocaleString()+'\n';
+  if(summerDue>0) msg+='*Summer Pack:* Rs. '+summerDue.toLocaleString()+'\n';
+  if(annualDue>0) msg+='*Annual Fund:* Rs. '+annualDue.toLocaleString()+'\n';
   msg+='*Total Payable:* Rs. '+totalDue.toLocaleString()+'\n\n';
   msg+='Meharbani farma kar '+due+' tareekh tak fees jama karwa dein.\n\n';
   msg+='Shukria!\nDar-e-Arqam School';
