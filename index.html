@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260601114537 -->
+<!-- v20260601173010 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -122,6 +123,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 
 
 
+
 </style>
 </head>
 <body>
@@ -165,7 +167,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
     <div class="sc"><div class="sl">Fees Collected</div><div class="sv g" id="d-f">Rs. 0</div></div>
     <div class="sc"><div class="sl">Expenses</div><div class="sv r" id="d-e">Rs. 0</div></div>
     <div class="sc"><div class="sl">Total Arrears</div><div class="sv gold" id="d-a">Rs. 0</div></div>
-    <div class="sc"><div class="sl">Net Balance</div><div class="sv g" id="d-b">Rs. 0</div></div>
+    <div class="sc"><div class="sl">Net Balance (This Month)</div><div class="sv g" id="d-b">Rs. 0</div></div>
+    <div class="sc"><div class="sl">All-Time Balance</div><div class="sv g" id="d-ab">Rs. 0</div></div>
   </div>
   <div class="card"><div class="ct">Pending This Month</div><div id="d-pl"></div></div>
 </div>
@@ -1671,10 +1674,25 @@ function updateDash() {
   var ta=0;
   DB.students.forEach(function(st){ta+=GA(st.id);});
   var te=ex+sl,bal=fc-te;
+  // All-time balance: ALL fees + annual + summer + admission collected, minus ALL expenses + salaries ever
+  var allFees=0;
+  DB.fees.forEach(function(f){allFees+=parseFloat(f.paid||0);});
+  var allAnnual=0;
+  (DB.annual||[]).forEach(function(a){allAnnual+=parseFloat(a.amount||0);});
+  var allSummer=0;
+  (DB.summer||[]).forEach(function(x){allSummer+=parseFloat(x.amount||0);});
+  var allAdm=0;
+  (DB.adm||[]).forEach(function(a){allAdm+=parseFloat(a.amount||a.total||0);});
+  var allExp=0;
+  DB.expenses.forEach(function(e){allExp+=parseFloat(e.amount||0);});
+  var allSal=0;
+  DB.salaries.forEach(function(r){allSal+=parseFloat(r.paid||0);});
+  var allTimeBal=(allFees+allAnnual+allSummer+allAdm)-(allExp+allSal);
   G('d-s').textContent=DB.students.length; G('d-st').textContent=DB.staff.length;
   G('d-f').textContent=fmt(fc); G('d-e').textContent=fmt(te);
   G('d-a').textContent=fmt(ta); G('d-b').textContent=fmt(bal);
   G('d-b').className='sv '+(bal>=0?'g':'r');
+  if(G('d-ab')){ G('d-ab').textContent=fmt(allTimeBal); G('d-ab').className='sv '+(allTimeBal>=0?'g':'r'); }
   var pending=DB.students.filter(function(s){
     if(s.free) return false;
     var r=DB.fees.find(function(f){return f.sid===s.id&&f.key===mk;});
