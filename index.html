@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260601173010 -->
+<!-- v20260601181036 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
+
 
 
 
@@ -124,6 +126,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 
 
 
+
+
 </style>
 </head>
 <body>
@@ -169,6 +173,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
     <div class="sc"><div class="sl">Total Arrears</div><div class="sv gold" id="d-a">Rs. 0</div></div>
     <div class="sc"><div class="sl">Net Balance (This Month)</div><div class="sv g" id="d-b">Rs. 0</div></div>
     <div class="sc"><div class="sl">All-Time Balance</div><div class="sv g" id="d-ab">Rs. 0</div></div>
+    <div class="sc"><div class="sl">All-Time Expenses</div><div class="sv r" id="d-ae">Rs. 0</div></div>
   </div>
   <div class="card"><div class="ct">Pending This Month</div><div id="d-pl"></div></div>
 </div>
@@ -472,6 +477,28 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 <div class="pg" id="pg-backup">
   <div class="st">Backup &amp; Restore</div><div class="ss">Export before updates, restore anytime</div>
   <div class="card">
+    <div class="ct">Payment Details (for WhatsApp & Vouchers)</div>
+    <p style="font-size:12px;color:var(--ink-s);margin-bottom:12px">Enter once — auto-appears in fee reminders and vouchers. Leave blank to hide a method.</p>
+    <div class="fr">
+      <div class="fg"><label>JazzCash Number</label><input id="pay-jc" placeholder="0300xxxxxxx"></div>
+      <div class="fg"><label>JazzCash Account Title</label><input id="pay-jc-name" placeholder="Account holder name"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>EasyPaisa Number</label><input id="pay-ep" placeholder="0300xxxxxxx"></div>
+      <div class="fg"><label>EasyPaisa Account Title</label><input id="pay-ep-name" placeholder="Account holder name"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Bank Name</label><input id="pay-bank" placeholder="e.g. Meezan Bank"></div>
+      <div class="fg"><label>Bank Account Title</label><input id="pay-bank-name" placeholder="Account title"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Bank Account Number / IBAN</label><input id="pay-bank-acc" placeholder="Account number or IBAN"></div>
+      <div class="fg"></div>
+    </div>
+    <div id="a-pay" class="al"></div>
+    <button class="btn bp" onclick="savePaymentDetails()">Save Payment Details</button>
+  </div>
+  <div class="card">
     <div class="ct">Change Password</div>
     <p style="font-size:12px;color:var(--ink-s);margin-bottom:12px">Change your login password.</p>
     <div class="fr">
@@ -751,6 +778,7 @@ function SP(btn,name) {
   if(name==='defaulters') renderDefaulters();
   if(name==='payables'){initPayables();renderPayables();}
   if(name==='history'){initHistory();}
+  if(name==='backup'){loadPaymentDetails();}
   if(name==='activitylog') renderActivityLog();
   if(name==='summer') renderSummer();
   if(name==='classreport'){initClassReport();genClassReport();}
@@ -1577,6 +1605,50 @@ function printPayables() {
   win.document.close(); setTimeout(function(){win.print();},600);
 }
 
+function savePaymentDetails() {
+  if(viewerBlock()) return;
+  var pd={
+    jc:GV('pay-jc'), jcName:GV('pay-jc-name'),
+    ep:GV('pay-ep'), epName:GV('pay-ep-name'),
+    bank:GV('pay-bank'), bankName:GV('pay-bank-name'), bankAcc:GV('pay-bank-acc')
+  };
+  DB.payInfo=pd;
+  save();
+  db.ref('payInfo').set(pd);
+  showAlert('a-pay','Payment details saved!');
+}
+
+function loadPaymentDetails() {
+  var pd=DB.payInfo||{};
+  if(G('pay-jc')) G('pay-jc').value=pd.jc||'';
+  if(G('pay-jc-name')) G('pay-jc-name').value=pd.jcName||'';
+  if(G('pay-ep')) G('pay-ep').value=pd.ep||'';
+  if(G('pay-ep-name')) G('pay-ep-name').value=pd.epName||'';
+  if(G('pay-bank')) G('pay-bank').value=pd.bank||'';
+  if(G('pay-bank-name')) G('pay-bank-name').value=pd.bankName||'';
+  if(G('pay-bank-acc')) G('pay-bank-acc').value=pd.bankAcc||'';
+}
+
+function getPaymentTextWA() {
+  var pd=DB.payInfo||{};
+  var lines=[];
+  if(pd.jc) lines.push('JazzCash: '+pd.jc+(pd.jcName?' ('+pd.jcName+')':''));
+  if(pd.ep) lines.push('EasyPaisa: '+pd.ep+(pd.epName?' ('+pd.epName+')':''));
+  if(pd.bank&&pd.bankAcc) lines.push('Bank: '+pd.bank+' - '+pd.bankAcc+(pd.bankName?' ('+pd.bankName+')':''));
+  if(!lines.length) return '';
+  return '\n*Payment Methods:*\n'+lines.join('\n')+'\n';
+}
+
+function getPaymentTextHTML() {
+  var pd=DB.payInfo||{};
+  var lines=[];
+  if(pd.jc) lines.push('JazzCash: '+pd.jc+(pd.jcName?' ('+pd.jcName+')':''));
+  if(pd.ep) lines.push('EasyPaisa: '+pd.ep+(pd.epName?' ('+pd.epName+')':''));
+  if(pd.bank&&pd.bankAcc) lines.push('Bank: '+pd.bank+' - '+pd.bankAcc+(pd.bankName?' ('+pd.bankName+')':''));
+  if(!lines.length) return '';
+  return '<div style="margin-top:4px;padding-top:4px;border-top:1px dashed #999;font-size:8px"><strong>Payment:</strong> '+lines.join(' | ')+'</div>';
+}
+
 function sendWhatsApp(sid, mo) {
   var s=DB.students.find(function(x){return x.id===sid;});
   if(!s||!s.phone){alert('No phone number for this student!');return;}
@@ -1614,8 +1686,9 @@ function sendWhatsApp(sid, mo) {
   if(summerDue>0) msg+='*Summer Pack:* Rs. '+summerDue.toLocaleString()+'\n';
   if(annualDue>0) msg+='*Annual Fund:* Rs. '+annualDue.toLocaleString()+'\n';
   msg+='*Total Payable:* Rs. '+totalDue.toLocaleString()+'\n\n';
-  msg+='Meharbani farma kar '+due+' tareekh tak fees jama karwa dein.\n\n';
-  msg+='Shukria!\nDar-e-Arqam School';
+  msg+='Meharbani farma kar '+due+' tareekh tak fees jama karwa dein.\n';
+  msg+=getPaymentTextWA();
+  msg+='\nShukria!\nDar-e-Arqam School';
   var url='https://wa.me/'+phone+'?text='+encodeURIComponent(msg);
   window.open(url,'_blank');
 }
@@ -1693,6 +1766,7 @@ function updateDash() {
   G('d-a').textContent=fmt(ta); G('d-b').textContent=fmt(bal);
   G('d-b').className='sv '+(bal>=0?'g':'r');
   if(G('d-ab')){ G('d-ab').textContent=fmt(allTimeBal); G('d-ab').className='sv '+(allTimeBal>=0?'g':'r'); }
+  if(G('d-ae')){ G('d-ae').textContent=fmt(allExp+allSal); }
   var pending=DB.students.filter(function(s){
     if(s.free) return false;
     var r=DB.fees.find(function(f){return f.sid===s.id&&f.key===mk;});
@@ -1889,7 +1963,7 @@ function generateVouchers() {
       pages+='<tr style="background:#eee"><th style="border:1px solid #333;padding:3px">Description</th><th style="border:1px solid #333;padding:3px">Cr.</th><th style="border:1px solid #333;padding:3px">Dr.</th><th style="border:1px solid #333;padding:3px">Balance</th></tr>';
       for(var r=0;r<3;r++) pages+='<tr><td class="vhist" style="border:1px solid #333;padding:12px"></td><td style="border:1px solid #333;padding:12px"></td><td style="border:1px solid #333;padding:12px"></td><td style="border:1px solid #333;padding:12px"></td></tr>';
       pages+='</table>';
-      pages+='<div class="vmsg" style="border:1px solid #333;padding:5px;font-size:9px;margin-bottom:5px;flex:1"><strong>Message:</strong> '+(msg||'&nbsp;')+'</div>';
+      pages+='<div class="vmsg" style="border:1px solid #333;padding:5px;font-size:9px;margin-bottom:5px;flex:1"><strong>Message:</strong> '+(msg||'&nbsp;')+getPaymentTextHTML()+'</div>';
       pages+='<div style="text-align:center;font-weight:700;font-size:11px;border:2px solid #333;padding:4px;margin-top:auto;background:#f0f0f0">'+cl+'</div>';
       pages+='</div>';
     }
