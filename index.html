@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260602030949 -->
+<!-- v20260602032404 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -109,6 +110,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -1952,7 +1954,8 @@ function generateVouchers() {
         else summerAmt=1200;
       }
     }
-    var total=arr+fee+exam+other+summerAmt,totalLate=total+late;
+    var total=arr+fee+exam+other+summerAmt;
+    var totalLate=(fee===0&&total===0)?0:total+late;
     pages+='<div class="vpage" style="display:flex;gap:0;page-break-after:always;margin-bottom:16px">';
     for(var j=0;j<3;j++){
       var cl=copyLabels[j];
@@ -1986,11 +1989,9 @@ function generateVouchers() {
       var runBal=0;
       var sFees=DB.fees.filter(function(f){return f.sid===s.id;});
       sFees.sort(function(a,b){return new Date(a.date)-new Date(b.date);});
-      // Opening arrears as initial balance
-      if(s.openingArrears && parseFloat(s.openingArrears)>0){
-        runBal=parseFloat(s.openingArrears);
-        histRows+='<tr><td style="border:1px solid #333;padding:3px">Initial Balance</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
-      }
+      // Opening arrears as initial balance (always show, even if 0)
+      runBal=parseFloat(s.openingArrears||0);
+      histRows+='<tr><td style="border:1px solid #333;padding:3px">Initial Balance</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
       sFees.forEach(function(f){
         var parts=f.key.split('-');
         var mName=(MNAME[parts[0]]||parts[0]);
