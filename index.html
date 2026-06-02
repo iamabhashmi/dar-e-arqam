@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260602025047 -->
+<!-- v20260602030949 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -108,6 +109,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -1992,23 +1994,26 @@ function generateVouchers() {
       sFees.forEach(function(f){
         var parts=f.key.split('-');
         var mName=(MNAME[parts[0]]||parts[0]);
-        var monthlyDue=parseFloat(f.monthly||f.total||0);
-        // Voucher charge (Cr) - the fee charged that month
-        if(monthlyDue>0){
-          runBal+=monthlyDue;
-          histRows+='<tr><td style="border:1px solid #333;padding:3px">Voucher '+mName+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+monthlyDue.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
+        // Charge this month = the monthly fee only (arrears already in running balance)
+        var monthlyFee=parseFloat(f.monthly||0);
+        if(monthlyFee>0){
+          runBal+=monthlyFee;
+          histRows+='<tr><td style="border:1px solid #333;padding:3px">Voucher '+mName+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+monthlyFee.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
         }
-        // Payments (Dr) - each installment
+        // Payment received this month — cap display so balance never goes below 0
+        var paidThis=0;
         if(f.payments && f.payments.length){
-          f.payments.forEach(function(p){
-            var pamt=parseFloat(p.amount||0);
-            runBal-=pamt;
-            histRows+='<tr><td style="border:1px solid #333;padding:3px">Cash '+mName+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+pamt.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
-          });
-        } else if(f.paid && parseFloat(f.paid)>0){
-          var pamt=parseFloat(f.paid);
-          runBal-=pamt;
-          histRows+='<tr><td style="border:1px solid #333;padding:3px">Cash '+mName+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+pamt.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
+          f.payments.forEach(function(p){ paidThis+=parseFloat(p.amount||0); });
+        } else if(f.paid){
+          paidThis=parseFloat(f.paid||0);
+        }
+        if(paidThis>0){
+          // Cap payment shown at the running balance to avoid negative (extra goes toward other charges)
+          var applied=Math.min(paidThis, runBal);
+          if(applied<0) applied=0;
+          runBal-=applied;
+          if(runBal<0) runBal=0;
+          histRows+='<tr><td style="border:1px solid #333;padding:3px">Cash '+mName+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+applied.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
         }
       });
       // Add empty rows to fill if few records (min 3 rows total)
