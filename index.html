@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260602032404 -->
+<!-- v20260602161146 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
+
 
 
 
@@ -110,6 +112,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
+
 
 
 
@@ -908,6 +912,32 @@ function saveStudent() {
 
 /* ---- FEE COLLECTION ---- */
 var _pid=null,_pkey=null;
+function undoFeePayment(sid, key) {
+  if(viewerBlock()) return;
+  var s=DB.students.find(function(x){return x.id===sid;});
+  var rec=DB.fees.find(function(f){return f.sid===sid&&f.key===key;});
+  if(!rec){alert('No payment found!');return;}
+  if(!confirm('Undo fee payment for '+s.name+' ('+key+')?\n\nPaid: '+fmt(rec.paid||0)+'\n\nThis will DELETE the payment record. The student will show as Unpaid again.')) return;
+  // Remove from local
+  DB.fees=DB.fees.filter(function(f){return!(f.sid===sid&&f.key===key);});
+  // Remove from Firebase (by rno/id and any duplicates)
+  var rno=rec.rno||rec.id;
+  if(rno) db.ref('fees/'+rno).remove();
+  db.ref('fees').orderByChild('sid').equalTo(sid).once('value').then(function(snap){
+    var data=snap.val()||{};
+    Object.keys(data).forEach(function(k){
+      if(data[k].key===key) db.ref('fees/'+k).remove();
+    });
+  });
+  // Reset student arrears
+  var sidx=DB.students.findIndex(function(x){return x.id===sid;});
+  if(sidx!==-1){ DB.students[sidx].arr=GA(sid); syncToFB('students',DB.students[sidx]); }
+  logActivity('Fee','UNDO fee payment: '+s.name+' | '+key,0);
+  save();
+  renderFees(); updateDash();
+  alert('Payment undone! '+s.name+' is now Unpaid for '+key);
+}
+
 function renderFees() {
   var mo=GV('fmo'),yr=GV('fyr'),key=mo+'-'+yr,tb=G('ftb');
   if(!DB.students.length){tb.innerHTML='<tr><td colspan="8"><div class="empty">Add students first</div></td></tr>';return;}
@@ -919,8 +949,8 @@ function renderFees() {
     var arr=GA(s.id),tot=parseFloat(s.fee)+arr;
     var badge,action;
     if(!rec){badge='<span class="bx bd">Unpaid</span>';action='<button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPM(this.dataset.id,this.dataset.key)">Collect</button>';}
-    else if(rec.partial){badge='<span class="bx borg">Partial</span>';action='<div style="display:flex;gap:4px"><button class="btn bg2 sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPM(this.dataset.id,this.dataset.key)">Add More</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showFeeRcpt(this.dataset.id,this.dataset.key)">Receipt</button></div>';}
-    else{badge='<span class="bx bg">Paid</span>';action='<button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showFeeRcpt(this.dataset.id,this.dataset.key)">Receipt</button>';}
+    else if(rec.partial){badge='<span class="bx borg">Partial</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bg2 sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPM(this.dataset.id,this.dataset.key)">Add More</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showFeeRcpt(this.dataset.id,this.dataset.key)">Receipt</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoFeePayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
+    else{badge='<span class="bx bg">Paid</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showFeeRcpt(this.dataset.id,this.dataset.key)">Receipt</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoFeePayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
     rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.cls+'</td><td>'+fmt(s.fee)+'</td><td style="color:'+(arr>0?'var(--red)':'var(--ink-m)')+'">'+( arr>0?fmt(arr):'-')+'</td><td style="font-weight:600;color:'+(arr>0?'var(--red)':'var(--ink)')+'">'+fmt(tot)+'</td><td>'+badge+'</td><td>'+action+'</td></tr>';
   }
   tb.innerHTML=rows;
@@ -1980,47 +2010,6 @@ function generateVouchers() {
       if(incSummer&&summerAmt>0) pages+='<tr><td style="border:1px solid #333;padding:3px;text-align:center">4</td><td style="border:1px solid #333;padding:3px">Summer Pack</td><td style="border:1px solid #333;padding:3px;text-align:right">'+summerAmt.toLocaleString()+'</td></tr>';
       pages+='<tr style="background:#f9f9f9"><td style="border:1px solid #333;padding:3px;font-weight:700" colspan="2">Total Payable by '+dueDate+'</td><td style="border:1px solid #333;padding:3px;text-align:right;font-weight:700">'+total.toLocaleString()+'</td></tr>';
       pages+='<tr style="background:#f9f9f9"><td style="border:1px solid #333;padding:3px;font-weight:700" colspan="2">Total Payable After '+dueDate+'</td><td style="border:1px solid #333;padding:3px;text-align:right;font-weight:700">'+totalLate.toLocaleString()+'</td></tr>';
-      pages+='</table>';
-      pages+='<div style="font-weight:700;text-align:center;border:1px solid #333;padding:3px;background:#f5f5f5;font-size:10px;margin-bottom:0">Fee And Payment History</div>';
-      pages+='<table style="width:100%;border-collapse:collapse;font-size:9px;margin-bottom:5px">';
-      pages+='<tr style="background:#eee"><th style="border:1px solid #333;padding:3px">Description</th><th style="border:1px solid #333;padding:3px">Cr.</th><th style="border:1px solid #333;padding:3px">Dr.</th><th style="border:1px solid #333;padding:3px">Balance</th></tr>';
-      // Build payment history ledger from student's fee records
-      var histRows='';
-      var runBal=0;
-      var sFees=DB.fees.filter(function(f){return f.sid===s.id;});
-      sFees.sort(function(a,b){return new Date(a.date)-new Date(b.date);});
-      // Opening arrears as initial balance (always show, even if 0)
-      runBal=parseFloat(s.openingArrears||0);
-      histRows+='<tr><td style="border:1px solid #333;padding:3px">Initial Balance</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
-      sFees.forEach(function(f){
-        var parts=f.key.split('-');
-        var mName=(MNAME[parts[0]]||parts[0]);
-        // Charge this month = the monthly fee only (arrears already in running balance)
-        var monthlyFee=parseFloat(f.monthly||0);
-        if(monthlyFee>0){
-          runBal+=monthlyFee;
-          histRows+='<tr><td style="border:1px solid #333;padding:3px">Voucher '+mName+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+monthlyFee.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
-        }
-        // Payment received this month — cap display so balance never goes below 0
-        var paidThis=0;
-        if(f.payments && f.payments.length){
-          f.payments.forEach(function(p){ paidThis+=parseFloat(p.amount||0); });
-        } else if(f.paid){
-          paidThis=parseFloat(f.paid||0);
-        }
-        if(paidThis>0){
-          // Cap payment shown at the running balance to avoid negative (extra goes toward other charges)
-          var applied=Math.min(paidThis, runBal);
-          if(applied<0) applied=0;
-          runBal-=applied;
-          if(runBal<0) runBal=0;
-          histRows+='<tr><td style="border:1px solid #333;padding:3px">Cash '+mName+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+applied.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
-        }
-      });
-      // Add empty rows to fill if few records (min 3 rows total)
-      var rowCount=histRows.split('<tr>').length-1;
-      for(var r=rowCount;r<3;r++) histRows+='<tr><td style="border:1px solid #333;padding:10px"></td><td style="border:1px solid #333;padding:10px"></td><td style="border:1px solid #333;padding:10px"></td><td style="border:1px solid #333;padding:10px"></td></tr>';
-      pages+=histRows;
       pages+='</table>';
       pages+='<div class="vmsg" style="border:1px solid #333;padding:5px;font-size:9px;margin-bottom:5px;flex:1"><strong>Message:</strong> '+(msg||'&nbsp;')+getPaymentTextHTML()+'</div>';
       pages+='<div style="text-align:center;font-weight:700;font-size:11px;border:2px solid #333;padding:4px;margin-top:auto;background:#f0f0f0">'+cl+'</div>';
