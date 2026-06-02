@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260601184309 -->
+<!-- v20260602025047 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -107,6 +108,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -1977,7 +1979,42 @@ function generateVouchers() {
       pages+='<div style="font-weight:700;text-align:center;border:1px solid #333;padding:3px;background:#f5f5f5;font-size:10px;margin-bottom:0">Fee And Payment History</div>';
       pages+='<table style="width:100%;border-collapse:collapse;font-size:9px;margin-bottom:5px">';
       pages+='<tr style="background:#eee"><th style="border:1px solid #333;padding:3px">Description</th><th style="border:1px solid #333;padding:3px">Cr.</th><th style="border:1px solid #333;padding:3px">Dr.</th><th style="border:1px solid #333;padding:3px">Balance</th></tr>';
-      for(var r=0;r<3;r++) pages+='<tr><td class="vhist" style="border:1px solid #333;padding:12px"></td><td style="border:1px solid #333;padding:12px"></td><td style="border:1px solid #333;padding:12px"></td><td style="border:1px solid #333;padding:12px"></td></tr>';
+      // Build payment history ledger from student's fee records
+      var histRows='';
+      var runBal=0;
+      var sFees=DB.fees.filter(function(f){return f.sid===s.id;});
+      sFees.sort(function(a,b){return new Date(a.date)-new Date(b.date);});
+      // Opening arrears as initial balance
+      if(s.openingArrears && parseFloat(s.openingArrears)>0){
+        runBal=parseFloat(s.openingArrears);
+        histRows+='<tr><td style="border:1px solid #333;padding:3px">Initial Balance</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
+      }
+      sFees.forEach(function(f){
+        var parts=f.key.split('-');
+        var mName=(MNAME[parts[0]]||parts[0]);
+        var monthlyDue=parseFloat(f.monthly||f.total||0);
+        // Voucher charge (Cr) - the fee charged that month
+        if(monthlyDue>0){
+          runBal+=monthlyDue;
+          histRows+='<tr><td style="border:1px solid #333;padding:3px">Voucher '+mName+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+monthlyDue.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
+        }
+        // Payments (Dr) - each installment
+        if(f.payments && f.payments.length){
+          f.payments.forEach(function(p){
+            var pamt=parseFloat(p.amount||0);
+            runBal-=pamt;
+            histRows+='<tr><td style="border:1px solid #333;padding:3px">Cash '+mName+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+pamt.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
+          });
+        } else if(f.paid && parseFloat(f.paid)>0){
+          var pamt=parseFloat(f.paid);
+          runBal-=pamt;
+          histRows+='<tr><td style="border:1px solid #333;padding:3px">Cash '+mName+'</td><td style="border:1px solid #333;padding:3px;text-align:right">0</td><td style="border:1px solid #333;padding:3px;text-align:right">'+pamt.toLocaleString()+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+runBal.toLocaleString()+'</td></tr>';
+        }
+      });
+      // Add empty rows to fill if few records (min 3 rows total)
+      var rowCount=histRows.split('<tr>').length-1;
+      for(var r=rowCount;r<3;r++) histRows+='<tr><td style="border:1px solid #333;padding:10px"></td><td style="border:1px solid #333;padding:10px"></td><td style="border:1px solid #333;padding:10px"></td><td style="border:1px solid #333;padding:10px"></td></tr>';
+      pages+=histRows;
       pages+='</table>';
       pages+='<div class="vmsg" style="border:1px solid #333;padding:5px;font-size:9px;margin-bottom:5px;flex:1"><strong>Message:</strong> '+(msg||'&nbsp;')+getPaymentTextHTML()+'</div>';
       pages+='<div style="text-align:center;font-weight:700;font-size:11px;border:2px solid #333;padding:4px;margin-top:auto;background:#f0f0f0">'+cl+'</div>';
