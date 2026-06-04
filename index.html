@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260602161146 -->
+<!-- v20260604003139 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -153,6 +154,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 
 
 
+
 </style>
 </head>
 <body>
@@ -183,6 +185,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
   <button class="nb" onclick="SP(this,'summer')">Summer Pack</button>
   <button class="nb" onclick="SP(this,'payables')">Total Payables</button>
   <button class="nb" onclick="SP(this,'history')">History</button>
+  <button class="nb" onclick="SP(this,'opening')">Opening Records</button>
   <button class="nb" onclick="SP(this,'activitylog')">Activity Log</button>
   <button class="nb" onclick="SP(this,'backup')">Backup</button>
 </nav>
@@ -474,6 +477,42 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
   <div class="card">
     <div class="ct">Payment Records</div>
     <div class="tw"><table><thead><tr><th>Month</th><th>Date Paid</th><th>Total Due</th><th>Paid</th><th>Balance</th><th>Status</th></tr></thead><tbody id="hist-tb"></tbody></table></div>
+  </div>
+</div>
+
+<!-- OPENING RECORDS (historical data entry) -->
+<div class="pg" id="pg-opening">
+  <div class="st">Opening Records</div><div class="ss">Enter your old hand-written revenue & expenses</div>
+  <div class="bb" style="background:var(--blue-p);color:var(--blue);font-size:12px">These records add to your monthly & all-time totals. Use them to enter past data recorded before/outside the software.</div>
+  <div class="card">
+    <div class="ct">Add Past Income (Revenue)</div>
+    <div class="fr">
+      <div class="fg"><label>Title / Description *</label><input id="or-inc-desc" placeholder="e.g. April fees collected"></div>
+      <div class="fg"><label>Amount (Rs.) *</label><input id="or-inc-amt" type="number"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Date *</label><input id="or-inc-date" type="date"></div>
+      <div class="fg"></div>
+    </div>
+    <div id="a-or-inc" class="al"></div>
+    <button class="btn bp" onclick="addOpeningIncome()">Add Income Record</button>
+  </div>
+  <div class="card">
+    <div class="ct">Add Past Expense</div>
+    <div class="fr">
+      <div class="fg"><label>Title / Description *</label><input id="or-exp-desc" placeholder="e.g. April rent"></div>
+      <div class="fg"><label>Amount (Rs.) *</label><input id="or-exp-amt" type="number"></div>
+    </div>
+    <div class="fr">
+      <div class="fg"><label>Date *</label><input id="or-exp-date" type="date"></div>
+      <div class="fg"></div>
+    </div>
+    <div id="a-or-exp" class="al"></div>
+    <button class="btn bp" onclick="addOpeningExpense()">Add Expense Record</button>
+  </div>
+  <div class="card">
+    <div class="ct">Opening Records Entered</div>
+    <div class="tw"><table><thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Amount</th><th>Action</th></tr></thead><tbody id="or-tb"></tbody></table></div>
   </div>
 </div>
 
@@ -804,6 +843,7 @@ function SP(btn,name) {
   if(name==='defaulters') renderDefaulters();
   if(name==='payables'){initPayables();renderPayables();}
   if(name==='history'){initHistory();}
+  if(name==='opening'){renderOpening();}
   if(name==='backup'){loadPaymentDetails();}
   if(name==='activitylog') renderActivityLog();
   if(name==='summer') renderSummer();
@@ -912,6 +952,72 @@ function saveStudent() {
 
 /* ---- FEE COLLECTION ---- */
 var _pid=null,_pkey=null;
+function addOpeningIncome() {
+  if(viewerBlock()) return;
+  var desc=GV('or-inc-desc'),amt=GN('or-inc-amt'),dt=GV('or-inc-date');
+  if(!desc||!amt||!dt){showAlert('a-or-inc','Fill all fields',true);return;}
+  // Store as a fee record with key matching the month so it counts in monthly + all-time
+  var d=new Date(dt);
+  var key=MONTHS[d.getMonth()]+'-'+d.getFullYear();
+  var rno='OP-'+Date.now().toString().slice(-6);
+  var rec={id:rno,rno:rno,sid:'opening',key:key,monthly:0,arrears:0,total:amt,paid:amt,balance:0,partial:false,date:new Date(dt).toISOString(),opening:true,desc:desc};
+  DB.fees.push(rec); save(); syncToFB('fees',rec);
+  logActivity('Opening','Past income: '+desc,amt);
+  G('or-inc-desc').value='';G('or-inc-amt').value='';
+  showAlert('a-or-inc','Income record added!');
+  renderOpening(); updateDash();
+}
+
+function addOpeningExpense() {
+  if(viewerBlock()) return;
+  var desc=GV('or-exp-desc'),amt=GN('or-exp-amt'),dt=GV('or-exp-date');
+  if(!desc||!amt||!dt){showAlert('a-or-exp','Fill all fields',true);return;}
+  var rec={id:uid(),cat:'Opening',amount:amt,date:dt,desc:desc,opening:true};
+  DB.expenses.push(rec); save(); syncToFB('expenses',rec);
+  logActivity('Opening','Past expense: '+desc,amt);
+  G('or-exp-desc').value='';G('or-exp-amt').value='';
+  showAlert('a-or-exp','Expense record added!');
+  renderOpening(); updateDash();
+}
+
+function renderOpening() {
+  var tb=G('or-tb');
+  var rows=[];
+  // Opening income (from fees with opening:true)
+  DB.fees.filter(function(f){return f.opening;}).forEach(function(f){
+    rows.push({date:f.date?f.date.split('T')[0]:'',type:'Income',desc:f.desc||'-',amt:parseFloat(f.paid||0),isInc:true,id:f.rno||f.id});
+  });
+  // Opening expenses
+  DB.expenses.filter(function(e){return e.opening;}).forEach(function(e){
+    rows.push({date:e.date||'',type:'Expense',desc:e.desc||'-',amt:parseFloat(e.amount||0),isInc:false,id:e.id});
+  });
+  rows.sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+  if(!rows.length){tb.innerHTML='<tr><td colspan="5"><div class="empty">No opening records yet</div></td></tr>';return;}
+  var html='';
+  rows.forEach(function(r){
+    var typeBadge=r.isInc?'<span class="bx bg">Income</span>':'<span class="bx bd">Expense</span>';
+    var delFn=r.isInc?'delOpeningIncome':'delOpeningExpense';
+    html+='<tr><td>'+(r.date||'-')+'</td><td>'+typeBadge+'</td><td>'+r.desc+'</td><td style="font-weight:600;color:'+(r.isInc?'var(--green-l)':'var(--red)')+'">'+fmt(r.amt)+'</td><td><button class="btn br sm" data-id="'+r.id+'" onclick="'+delFn+'(this.dataset.id)">Delete</button></td></tr>';
+  });
+  tb.innerHTML=html;
+}
+
+function delOpeningIncome(id) {
+  if(viewerBlock()) return;
+  if(!confirm('Delete this income record?')) return;
+  DB.fees=DB.fees.filter(function(f){return!(f.opening&&(f.rno===id||f.id===id));});
+  if(id) db.ref('fees/'+id).remove();
+  save(); renderOpening(); updateDash();
+}
+
+function delOpeningExpense(id) {
+  if(viewerBlock()) return;
+  if(!confirm('Delete this expense record?')) return;
+  DB.expenses=DB.expenses.filter(function(e){return e.id!==id;});
+  if(id) deleteFromFB('expenses',id);
+  save(); renderOpening(); updateDash();
+}
+
 function undoFeePayment(sid, key) {
   if(viewerBlock()) return;
   var s=DB.students.find(function(x){return x.id===sid;});
