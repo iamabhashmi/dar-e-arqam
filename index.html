@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260604003139 -->
+<!-- v20260604090140 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -155,6 +156,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 
 
 
+
 </style>
 </head>
 <body>
@@ -186,6 +188,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
   <button class="nb" onclick="SP(this,'payables')">Total Payables</button>
   <button class="nb" onclick="SP(this,'history')">History</button>
   <button class="nb" onclick="SP(this,'opening')">Opening Records</button>
+  <button class="nb" onclick="SP(this,'families')">Families</button>
   <button class="nb" onclick="SP(this,'activitylog')">Activity Log</button>
   <button class="nb" onclick="SP(this,'backup')">Backup</button>
 </nav>
@@ -513,6 +516,25 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
   <div class="card">
     <div class="ct">Opening Records Entered</div>
     <div class="tw"><table><thead><tr><th>Date</th><th>Type</th><th>Description</th><th>Amount</th><th>Action</th></tr></thead><tbody id="or-tb"></tbody></table></div>
+  </div>
+</div>
+
+<!-- FAMILIES -->
+<div class="pg" id="pg-families">
+  <div class="st">Families</div><div class="ss">Combined vouchers & contacts grouped by father</div>
+  <div class="mbar">
+    <label>Month:</label>
+    <select id="fam-mo"><option value="Jan">January</option><option value="Feb">February</option><option value="Mar">March</option><option value="Apr">April</option><option value="May">May</option><option value="Jun">June</option><option value="Jul">July</option><option value="Aug">August</option><option value="Sep">September</option><option value="Oct">October</option><option value="Nov">November</option><option value="Dec">December</option></select>
+    <label>Year:</label>
+    <select id="fam-yr"><option value="2024">2024</option><option value="2025">2025</option><option value="2026" selected>2026</option></select>
+    <label>Due Date:</label>
+    <input id="fam-due" type="number" value="7" style="width:60px">
+    <button class="btn bp sm" onclick="renderFamilies()">Show Families</button>
+  </div>
+  <div class="card">
+    <div class="ct">Family Contact List</div>
+    <div style="margin-bottom:10px"><button class="btn bo sm" onclick="printFamilyContacts()">Print Contact List</button></div>
+    <div class="tw"><table><thead><tr><th>#</th><th>Father</th><th>Phone</th><th>Children</th><th>Classes</th><th>Total Due</th><th>Action</th></tr></thead><tbody id="fam-tb"></tbody></table></div>
   </div>
 </div>
 
@@ -844,6 +866,7 @@ function SP(btn,name) {
   if(name==='payables'){initPayables();renderPayables();}
   if(name==='history'){initHistory();}
   if(name==='opening'){renderOpening();}
+  if(name==='families'){initFamilies();renderFamilies();}
   if(name==='backup'){loadPaymentDetails();}
   if(name==='activitylog') renderActivityLog();
   if(name==='summer') renderSummer();
@@ -952,6 +975,135 @@ function saveStudent() {
 
 /* ---- FEE COLLECTION ---- */
 var _pid=null,_pkey=null;
+function initFamilies() {
+  var d=new Date();
+  if(G('fam-mo')) G('fam-mo').value=MONTHS[d.getMonth()];
+  if(G('fam-yr')) G('fam-yr').value=String(d.getFullYear());
+}
+
+function getFamilies() {
+  // Group students by father name (normalized)
+  var fams={};
+  DB.students.forEach(function(s){
+    var f=(s.father||'Unknown').trim();
+    var key=f.toLowerCase();
+    if(!fams[key]) fams[key]={father:f, phone:'', children:[]};
+    fams[key].children.push(s);
+    if(!fams[key].phone && s.phone) fams[key].phone=s.phone;
+  });
+  return fams;
+}
+
+function renderFamilies() {
+  var mo=GV('fam-mo'),yr=GV('fam-yr'),key=mo+'-'+yr;
+  var fams=getFamilies();
+  var tb=G('fam-tb');
+  var keys=Object.keys(fams).sort(function(a,b){return fams[a].father.localeCompare(fams[b].father);});
+  if(!keys.length){tb.innerHTML='<tr><td colspan="6"><div class="empty">No families found</div></td></tr>';return;}
+  var rows='';var idx=1;
+  keys.forEach(function(k){
+    var fam=fams[k];
+    var totalDue=0;
+    fam.children.forEach(function(s){
+      if(!s.free){
+        var arr=GA(s.id);
+        var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
+        if(!rec) totalDue+=parseFloat(s.fee)+arr;
+        else if(rec.partial) totalDue+=parseFloat(rec.balance||0);
+      }
+    });
+    var names=fam.children.map(function(c){return c.name;}).join(', ');
+    var classes=fam.children.map(function(c){return c.cls;}).join(', ');
+    var famLabel=fam.father+"'s Kids";
+    rows+='<tr><td>'+(idx++)+'</td><td><strong>'+famLabel+'</strong></td><td>'+(fam.phone||'-')+'</td><td>'+names+' <span style="color:var(--ink-m)">('+fam.children.length+')</span></td><td>'+classes+'</td><td style="font-weight:700;color:'+(totalDue>0?'var(--red)':'var(--green-l)')+'">'+fmt(totalDue)+'</td>';
+    rows+='<td><div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bp sm" data-f="'+encodeURIComponent(k)+'" onclick="printFamilyVoucher(this.dataset.f)">Voucher</button>';
+    if(fam.phone) rows+='<button class="btn sm" style="background:#25D366;color:#fff" data-f="'+encodeURIComponent(k)+'" onclick="familyWhatsApp(this.dataset.f)">WhatsApp</button>';
+    rows+='</div></td></tr>';
+  });
+  // Add Action column header dynamically isn't needed; we included an extra td. Fix header via JS:
+  tb.innerHTML=rows;
+}
+
+function printFamilyVoucher(fkeyEnc) {
+  var fkey=decodeURIComponent(fkeyEnc);
+  var mo=GV('fam-mo'),yr=GV('fam-yr'),due=GV('fam-due')||'7',key=mo+'-'+yr;
+  var fams=getFamilies();
+  var fam=fams[fkey];
+  if(!fam){alert('Family not found');return;}
+  var dueDate=due+'/'+String(MONTHS.indexOf(mo)+1).padStart(2,'0')+'/'+yr;
+  var logoSrc=document.querySelector('img.logo')?document.querySelector('img.logo').src:'';
+  var famLabel=fam.father+"'s Kids";
+  var grandTotal=0;
+  var childRows='';
+  fam.children.forEach(function(s){
+    var fee=s.free?0:parseFloat(s.fee||0);
+    var arr=s.free?0:GA(s.id);
+    var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
+    var due2=0;
+    if(!s.free){ if(!rec) due2=fee+arr; else if(rec.partial) due2=parseFloat(rec.balance||0); }
+    grandTotal+=due2;
+    childRows+='<tr><td style="border:1px solid #333;padding:5px">'+s.name+'</td><td style="border:1px solid #333;padding:5px">'+s.cls+'</td><td style="border:1px solid #333;padding:5px;text-align:right">'+fmt(fee)+'</td><td style="border:1px solid #333;padding:5px;text-align:right">'+fmt(arr)+'</td><td style="border:1px solid #333;padding:5px;text-align:right;font-weight:700">'+fmt(due2)+'</td></tr>';
+  });
+  var payHTML=getPaymentTextHTML();
+  var win=window.open('','_blank');
+  win.document.write('<!DOCTYPE html><html><head><title>Family Voucher - '+famLabel+'</title><style>*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif}body{padding:20px}.v{border:2px solid #333;padding:16px;max-width:600px;margin:0 auto}.hd{display:flex;align-items:center;gap:12px;border-bottom:2px solid #333;padding-bottom:10px;margin-bottom:10px}.hd img{width:60px;height:60px;border-radius:8px}.hd h2{font-size:18px}.hd p{font-size:12px}table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12px}th{background:#1a3a6b;color:#fff;border:1px solid #333;padding:5px}td{font-size:12px}.tot{font-size:16px;font-weight:700;text-align:right;padding:10px;background:#f5f5f5;border:1px solid #333}.msg{border:1px solid #333;padding:8px;margin-top:10px;font-size:11px;min-height:50px}</style></head><body>');
+  win.document.write('<div class="v"><div class="hd">'+(logoSrc?'<img src="'+logoSrc+'">':'')+'<div><h2>DAR-E-ARQAM SCHOOL</h2><p>Haveli Lakha Campus</p><p><strong>Family Fee Voucher - '+mo+' '+yr+'</strong></p></div></div>');
+  win.document.write('<p style="font-size:14px;margin-bottom:4px"><strong>Family:</strong> '+famLabel+'</p>');
+  win.document.write('<p style="font-size:13px;margin-bottom:4px"><strong>Father:</strong> '+fam.father+'</p>');
+  win.document.write('<p style="font-size:13px;margin-bottom:8px"><strong>Phone:</strong> '+(fam.phone||'-')+'</p>');
+  win.document.write('<table><thead><tr><th>Student</th><th>Class</th><th>Fee</th><th>Arrears</th><th>Total Due</th></tr></thead><tbody>'+childRows+'</tbody></table>');
+  win.document.write('<div class="tot">Grand Total Payable by '+dueDate+': Rs. '+grandTotal.toLocaleString()+'</div>');
+  win.document.write('<div class="msg"><strong>Message:</strong>'+payHTML+'</div>');
+  win.document.write('</div></body></html>');
+  win.document.close(); setTimeout(function(){win.print();},500);
+}
+
+function familyWhatsApp(fkeyEnc) {
+  var fkey=decodeURIComponent(fkeyEnc);
+  var mo=GV('fam-mo'),yr=GV('fam-yr'),due=GV('fam-due')||'7',key=mo+'-'+yr;
+  var fams=getFamilies();
+  var fam=fams[fkey];
+  if(!fam||!fam.phone){alert('No phone for this family!');return;}
+  var phone=fam.phone.replace(/[^0-9]/g,'');
+  if(phone.charAt(0)==='0') phone='92'+phone.substring(1);
+  else if(phone.substring(0,2)!=='92') phone='92'+phone;
+  var grandTotal=0;
+  var msg='Assalam-o-Alaikum!\n\nDear Parent,\nFee reminder from *Dar-e-Arqam School* (Haveli Lakha Campus).\n\n';
+  msg+='*Family:* '+fam.father+"'s Kids\n\n";
+  fam.children.forEach(function(s){
+    var fee=s.free?0:parseFloat(s.fee||0);
+    var arr=s.free?0:GA(s.id);
+    var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
+    var due2=0;
+    if(!s.free){ if(!rec) due2=fee+arr; else if(rec.partial) due2=parseFloat(rec.balance||0); }
+    grandTotal+=due2;
+    msg+='*'+s.name+'* ('+s.cls+'): Rs. '+due2.toLocaleString()+'\n';
+  });
+  msg+='\n*Grand Total: Rs. '+grandTotal.toLocaleString()+'*\n\n';
+  msg+='Meharbani farma kar '+due+' tareekh tak fees jama karwa dein.\n';
+  msg+=getPaymentTextWA();
+  msg+='\nShukria!\nDar-e-Arqam School';
+  window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msg),'_blank');
+}
+
+function printFamilyContacts() {
+  var fams=getFamilies();
+  var keys=Object.keys(fams).sort(function(a,b){return fams[a].father.localeCompare(fams[b].father);});
+  if(!keys.length){alert('No families!');return;}
+  var rows='';var idx=1;
+  keys.forEach(function(k){
+    var fam=fams[k];
+    var names=fam.children.map(function(c){return c.name+' ('+c.cls+')';}).join(', ');
+    rows+='<tr><td>'+(idx++)+'</td><td>'+fam.father+'</td><td>'+(fam.phone||'-')+'</td><td>'+names+'</td></tr>';
+  });
+  var win=window.open('','_blank');
+  win.document.write('<!DOCTYPE html><html><head><title>Family Contact List</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h2,h3{text-align:center}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#1a3a6b;color:#fff;padding:7px;text-align:left;font-size:11px}td{padding:6px 7px;border-bottom:1px solid #ddd;font-size:11px}tr:nth-child(even) td{background:#f7f9fb}</style></head><body>');
+  win.document.write('<h2>DAR-E-ARQAM SCHOOL</h2><h3>Haveli Lakha Campus</h3><h3>Family Contact List</h3>');
+  win.document.write('<table><thead><tr><th>#</th><th>Father</th><th>Phone</th><th>Children</th></tr></thead><tbody>'+rows+'</tbody></table>');
+  win.document.write('</body></html>');
+  win.document.close(); setTimeout(function(){win.print();},500);
+}
+
 function addOpeningIncome() {
   if(viewerBlock()) return;
   var desc=GV('or-inc-desc'),amt=GN('or-inc-amt'),dt=GV('or-inc-date');
