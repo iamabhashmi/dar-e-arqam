@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260604102732 -->
+<!-- v20260604103851 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -132,6 +133,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -676,6 +678,23 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 </div>
 </div><!-- end main-content -->
 
+<!-- FAMILY PAYMENT MODAL -->
+<div class="ov" id="ov-fampay">
+  <div class="md">
+    <button class="mx" onclick="CM('ov-fampay')">&times;</button>
+    <div class="mt" id="fampay-title">Collect Family Fee</div>
+    <div id="fampay-info" style="font-size:13px;margin-bottom:10px"></div>
+    <div id="fampay-breakdown" style="background:var(--cream);border-radius:8px;padding:10px;margin-bottom:10px;font-size:12px"></div>
+    <div class="fr"><div class="fg"><label>Total Due</label><input id="fampay-due" type="text" readonly style="background:#f0f0f0;font-weight:700"></div><div class="fg"><label>Amount Receiving *</label><input id="fampay-amt" type="number" oninput="fampayUpdate()"></div></div>
+    <div id="fampay-res" style="display:none;background:var(--blue-p);border-radius:8px;padding:10px;margin-bottom:10px;font-size:13px">
+      Receiving: <strong id="fampay-rec"></strong> | Remaining (arrears): <strong id="fampay-bal"></strong>
+    </div>
+    <div id="a-fampay" class="al"></div>
+    <p style="font-size:11px;color:var(--ink-m);margin-bottom:10px">Payment is distributed across children's fees first, then summer pack. Any remaining due becomes arrears for next month.</p>
+    <button class="btn bp" onclick="confirmFamilyPay()">Confirm Payment</button>
+  </div>
+</div>
+
 <!-- PARTIAL FEE MODAL -->
 <div class="ov" id="ov-pm">
   <div class="md">
@@ -1207,7 +1226,9 @@ function renderFamilies() {
     var classes=fam.children.map(function(c){return c.cls;}).join(', ');
     var famLabel=fam.father+"'s Kids";
     rows+='<tr><td>'+(idx++)+'</td><td><strong>'+famLabel+'</strong></td><td>'+(fam.phone||'-')+'</td><td>'+names+' <span style="color:var(--ink-m)">('+fam.children.length+')</span></td><td>'+classes+'</td><td style="font-weight:700;color:'+(totalDue>0?'var(--red)':'var(--green-l)')+'">'+fmt(totalDue)+'</td>';
-    rows+='<td><div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bp sm" data-f="'+encodeURIComponent(k)+'" onclick="printFamilyVoucher(this.dataset.f)">Voucher</button>';
+    rows+='<td><div style="display:flex;gap:4px;flex-wrap:wrap">';
+    if(totalDue>0) rows+='<button class="btn bg2 sm" data-f="'+encodeURIComponent(k)+'" onclick="openFamilyPay(this.dataset.f)">Collect</button>';
+    rows+='<button class="btn bp sm" data-f="'+encodeURIComponent(k)+'" onclick="printFamilyVoucher(this.dataset.f)">Voucher</button>';
     if(fam.phone) rows+='<button class="btn sm" style="background:#25D366;color:#fff" data-f="'+encodeURIComponent(k)+'" onclick="familyWhatsApp(this.dataset.f)">WhatsApp</button>';
     rows+='</div></td></tr>';
   });
@@ -1272,6 +1293,121 @@ function printFamilyVoucher(fkeyEnc) {
   win.document.write('@media print{@page{size:A4 landscape;margin:5mm}html,body{height:100%}.vpage{height:calc(100vh - 10mm)}button{display:none}}');
   win.document.write('</style></head><body>'+page+'</body></html>');
   win.document.close(); setTimeout(function(){win.print();},600);
+}
+
+var _famKey=null, _famSession=null;
+
+function openFamilyPay(fkeyEnc) {
+  if(viewerBlock()) return;
+  var fkey=decodeURIComponent(fkeyEnc);
+  var mo=GV('fam-mo'),yr=GV('fam-yr'),key=mo+'-'+yr;
+  var incSummer=G('fam-summer')&&G('fam-summer').checked;
+  var fams=getFamilies();
+  var fam=fams[fkey];
+  if(!fam) return;
+  _famKey=fkey; _famSession=key;
+  // Build breakdown of what each child owes
+  var totalDue=0, breakdown='';
+  fam.children.forEach(function(s){
+    var childDue=0, parts=[];
+    if(!s.free){
+      var arr=GA(s.id);
+      var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
+      var feeDue=0;
+      if(!rec) feeDue=parseFloat(s.fee)+arr;
+      else if(rec.partial) feeDue=parseFloat(rec.balance||0);
+      if(feeDue>0){ childDue+=feeDue; parts.push('Fee: '+fmt(feeDue)); }
+    }
+    if(incSummer){
+      var spr=(DB.summer||[]).find(function(x){return x.sid===s.id;});
+      if(!spr){ var sa=getSummerPrice2(s.cls); childDue+=sa; parts.push('Summer: '+fmt(sa)); }
+    }
+    totalDue+=childDue;
+    if(childDue>0) breakdown+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #eee"><span>'+s.name+' ('+s.cls+')</span><span>'+parts.join(', ')+'</span></div>';
+  });
+  G('fampay-title').textContent="Collect — "+fam.father+"'s Kids";
+  G('fampay-info').innerHTML='<strong>'+fam.father+"'s Kids</strong> | Phone: "+(fam.phone||'-')+' | '+mo+' '+yr;
+  G('fampay-breakdown').innerHTML=breakdown||'<em>No dues</em>';
+  G('fampay-due').value=fmt(totalDue);
+  G('fampay-amt').value=''; G('fampay-res').style.display='none';
+  OM('ov-fampay');
+}
+
+function fampayUpdate() {
+  var due=GN('fampay-amt');
+  var totalDue=parseFloat((G('fampay-due').value||'0').replace(/[^0-9.]/g,''));
+  var rec=GN('fampay-amt'),bal=totalDue-rec;
+  G('fampay-rec').textContent=fmt(rec);
+  G('fampay-bal').textContent=bal>0?fmt(bal):'Fully Paid';
+  G('fampay-bal').style.color=bal>0?'var(--red)':'var(--green-l)';
+  G('fampay-res').style.display='block';
+}
+
+function confirmFamilyPay() {
+  if(viewerBlock()) return;
+  var fams=getFamilies();
+  var fam=fams[_famKey];
+  if(!fam){alert('Family not found');return;}
+  var key=_famSession;
+  var incSummer=G('fam-summer')&&G('fam-summer').checked;
+  var totalDue=parseFloat((G('fampay-due').value||'0').replace(/[^0-9.]/g,''));
+  var receiving=GN('fampay-amt');
+  if(!receiving||receiving<=0){showAlert('a-fampay','Enter amount',true);return;}
+  if(receiving>totalDue){
+    if(!confirm('Amount ('+fmt(receiving)+') exceeds due ('+fmt(totalDue)+'). Continue?')) return;
+  }
+  var remaining=receiving;
+  var now=new Date().toISOString();
+  // Distribute payment: each child's FEE first (in order), then summer pack
+  fam.children.forEach(function(s){
+    if(s.free) return;
+    var arr=GA(s.id), fee=parseFloat(s.fee);
+    var ex=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
+    var prevPaid=ex?parseFloat(ex.paid||0):0;
+    var childTotal=fee+arr;
+    var childRemaining=childTotal-prevPaid;
+    if(childRemaining<=0) return;
+    var pay=Math.min(remaining, childRemaining);
+    if(pay<=0) return;
+    remaining-=pay;
+    var totalPaid=prevPaid+pay;
+    var bal=Math.max(0,childTotal-totalPaid);
+    var full=bal<=0;
+    var rno=ex?ex.rno:'F-'+Date.now().toString().slice(-5)+Math.floor(Math.random()*100);
+    var payments=(ex&&ex.payments)?ex.payments.slice():[];
+    payments.push({date:now, amount:pay});
+    DB.fees=DB.fees.filter(function(f){return!(f.sid===s.id&&f.key===key);});
+    var feeRec={id:rno,sid:s.id,key:key,monthly:fee,arrears:arr,concession:0,total:childTotal,paid:totalPaid,balance:bal,partial:!full,date:now,rno:rno,payments:payments};
+    DB.fees.push(feeRec);
+    var sidx=DB.students.findIndex(function(x){return x.id===s.id;});
+    if(sidx!==-1){ DB.students[sidx].arr=bal; syncToFB('students',DB.students[sidx]); }
+    syncToFB('fees',feeRec);
+  });
+  // Then summer pack if enabled and money remains
+  if(incSummer && remaining>0){
+    fam.children.forEach(function(s){
+      if(remaining<=0) return;
+      var spr=(DB.summer||[]).find(function(x){return x.sid===s.id;});
+      if(spr) return;
+      var sa=getSummerPrice2(s.cls);
+      var pay=Math.min(remaining, sa);
+      if(pay<=0) return;
+      remaining-=pay;
+      // Only record summer as paid if fully covered (else leave as due)
+      if(pay>=sa){
+        var rno='SP-'+Date.now().toString().slice(-5)+Math.floor(Math.random()*100);
+        var sumRec={id:rno,rno:rno,sid:s.id,yr:'2025-26',amount:sa,date:now};
+        DB.summer.push(sumRec); syncToFB('summer',sumRec);
+      } else {
+        remaining+=pay; // give back partial summer (can't partially pay summer)
+      }
+    });
+  }
+  logActivity('Fee','Family payment: '+fam.father+"'s Kids | "+key,receiving);
+  save();
+  CM('ov-fampay');
+  renderFamilies(); updateDash();
+  alert('Payment of '+fmt(receiving)+' recorded for '+fam.father+"'s Kids!"+(remaining>0?'\n\nNote: Rs. '+fmt(remaining)+' could not be applied (summer pack needs full payment).':''));
 }
 
 function familyWhatsApp(fkeyEnc) {
