@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260604091254 -->
+<!-- v20260604102006 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
+
 
 
 
@@ -159,6 +161,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 
 
 
+
+
 </style>
 </head>
 <body>
@@ -191,6 +195,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
   <button class="nb" onclick="SP(this,'history')">History</button>
   <button class="nb" onclick="SP(this,'opening')">Opening Records</button>
   <button class="nb" onclick="SP(this,'families')">Families</button>
+  <button class="nb" onclick="SP(this,'finance')">Financial Summary</button>
   <button class="nb" onclick="SP(this,'activitylog')">Activity Log</button>
   <button class="nb" onclick="SP(this,'backup')">Backup</button>
 </nav>
@@ -531,12 +536,38 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
     <select id="fam-yr"><option value="2024">2024</option><option value="2025">2025</option><option value="2026" selected>2026</option></select>
     <label>Due Date:</label>
     <input id="fam-due" type="number" value="7" style="width:60px">
+    <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="fam-summer" style="width:16px;height:16px"> Include Summer Pack</label>
     <button class="btn bp sm" onclick="renderFamilies()">Show Families</button>
   </div>
   <div class="card">
     <div class="ct">Family Contact List</div>
     <div style="margin-bottom:10px"><button class="btn bo sm" onclick="printFamilyContacts()">Print Contact List</button></div>
     <div class="tw"><table><thead><tr><th>#</th><th>Father</th><th>Phone</th><th>Children</th><th>Classes</th><th>Total Due</th><th>Action</th></tr></thead><tbody id="fam-tb"></tbody></table></div>
+  </div>
+</div>
+
+<!-- FINANCIAL SUMMARY -->
+<div class="pg" id="pg-finance">
+  <div class="st">Financial Summary</div><div class="ss">Complete profit & loss overview</div>
+  <div class="card">
+    <div class="ct">Add Investment / Capital</div>
+    <p style="font-size:12px;color:var(--ink-s);margin-bottom:10px">Track money you invested into the school (furniture, building, setup, etc.)</p>
+    <div class="fr">
+      <div class="fg"><label>Description *</label><input id="inv-desc" placeholder="e.g. Furniture, Building rent advance"></div>
+      <div class="fg"><label>Amount (Rs.) *</label><input id="inv-amt" type="number"></div>
+    </div>
+    <div class="fr"><div class="fg"><label>Date *</label><input id="inv-date" type="date"></div><div class="fg"></div></div>
+    <div id="a-inv" class="al"></div>
+    <button class="btn bp" onclick="addInvestment()">Add Investment</button>
+  </div>
+  <div class="card">
+    <div class="ct">Investments Made</div>
+    <div class="tw"><table><thead><tr><th>Date</th><th>Description</th><th>Amount</th><th>Action</th></tr></thead><tbody id="inv-tb"></tbody></table></div>
+  </div>
+  <div class="card">
+    <div class="ct">Complete Financial Report</div>
+    <div style="margin-bottom:12px"><button class="btn bo sm" onclick="printFinance()">Print Full Report</button></div>
+    <div id="finance-report"></div>
   </div>
 </div>
 
@@ -730,7 +761,7 @@ var db = firebase.database();
 // ===== DB (local cache) =====
 var DB = {
   students: [], staff: [], fees: [], salaries: [],
-  expenses: [], annual: [], adm: [], summer: [], log: []
+  expenses: [], annual: [], adm: [], summer: [], log: [], investments: []
 };
 
 // Load all data from Firebase
@@ -748,6 +779,7 @@ function loadFromFirebase() {
     DB.summer   = objToArr(data.summer);
     DB.log      = objToArr(data.log);
     DB.payInfo  = data.payInfo || {};
+    DB.investments = objToArr(data.investments);
     showLoading(false);
     updateDash(); updateStats(); checkFeeAlert();
     renderStudents();
@@ -869,6 +901,7 @@ function SP(btn,name) {
   if(name==='history'){initHistory();}
   if(name==='opening'){renderOpening();}
   if(name==='families'){initFamilies();renderFamilies();}
+  if(name==='finance'){renderInvestments();renderFinance();}
   if(name==='backup'){loadPaymentDetails();}
   if(name==='activitylog') renderActivityLog();
   if(name==='summer') renderSummer();
@@ -977,6 +1010,111 @@ function saveStudent() {
 
 /* ---- FEE COLLECTION ---- */
 var _pid=null,_pkey=null;
+function addInvestment() {
+  if(viewerBlock()) return;
+  var desc=GV('inv-desc'),amt=GN('inv-amt'),dt=GV('inv-date');
+  if(!desc||!amt||!dt){showAlert('a-inv','Fill all fields',true);return;}
+  if(!DB.investments) DB.investments=[];
+  var rec={id:uid(),desc:desc,amount:amt,date:dt};
+  DB.investments.push(rec); save(); syncToFB('investments',rec);
+  logActivity('Investment',desc,amt);
+  G('inv-desc').value='';G('inv-amt').value='';
+  showAlert('a-inv','Investment added!');
+  renderInvestments(); renderFinance();
+}
+
+function renderInvestments() {
+  var tb=G('inv-tb');
+  var list=(DB.investments||[]).slice().sort(function(a,b){return new Date(b.date)-new Date(a.date);});
+  if(!list.length){tb.innerHTML='<tr><td colspan="4"><div class="empty">No investments yet</div></td></tr>';return;}
+  var rows='';
+  list.forEach(function(inv){
+    rows+='<tr><td>'+(inv.date||'-')+'</td><td>'+inv.desc+'</td><td style="font-weight:600;color:var(--blue-l)">'+fmt(inv.amount)+'</td><td><button class="btn br sm" data-id="'+inv.id+'" onclick="delInvestment(this.dataset.id)">Delete</button></td></tr>';
+  });
+  tb.innerHTML=rows;
+}
+
+function delInvestment(id) {
+  if(viewerBlock()) return;
+  if(!confirm('Delete this investment record?')) return;
+  DB.investments=(DB.investments||[]).filter(function(x){return x.id!==id;});
+  deleteFromFB('investments',id);
+  save(); renderInvestments(); renderFinance();
+}
+
+function renderFinance() {
+  var now=new Date(),mk=MONTHS[now.getMonth()]+'-'+now.getFullYear();
+  var ys=String(now.getFullYear()),ms=String(now.getMonth()+1).padStart(2,'0');
+  // ALL-TIME income
+  var allFees=0; DB.fees.forEach(function(f){allFees+=parseFloat(f.paid||0);});
+  var allAnnual=0; (DB.annual||[]).forEach(function(a){allAnnual+=parseFloat(a.amount||0);});
+  var allSummer=0; (DB.summer||[]).forEach(function(x){allSummer+=parseFloat(x.amount||0);});
+  var allAdm=0; (DB.adm||[]).forEach(function(a){allAdm+=parseFloat(a.amount||a.total||0);});
+  var allIncome=allFees+allAnnual+allSummer+allAdm;
+  // ALL-TIME expenses
+  var allExp=0; DB.expenses.forEach(function(e){allExp+=parseFloat(e.amount||0);});
+  var allSal=0; DB.salaries.forEach(function(r){allSal+=parseFloat(r.paid||0);});
+  var allExpense=allExp+allSal;
+  // Investment
+  var allInv=0; (DB.investments||[]).forEach(function(i){allInv+=parseFloat(i.amount||0);});
+  // Outstanding (arrears)
+  var outstanding=0; DB.students.forEach(function(s){outstanding+=GA(s.id);});
+  // Net
+  var netProfit=allIncome-allExpense;
+  var netWithInv=netProfit-allInv;
+  // THIS MONTH
+  var mFees=0; DB.fees.filter(function(f){return f.key===mk;}).forEach(function(f){mFees+=parseFloat(f.paid||0);});
+  var mAnnual=0; (DB.annual||[]).forEach(function(a){if(a.date&&a.date.substr(0,4)===ys&&a.date.substr(5,2)===ms)mAnnual+=parseFloat(a.amount||0);});
+  var mSummer=0; (DB.summer||[]).forEach(function(x){if(x.date&&x.date.substr(0,4)===ys&&x.date.substr(5,2)===ms)mSummer+=parseFloat(x.amount||0);});
+  var mIncome=mFees+mAnnual+mSummer;
+  var mExp=0; DB.expenses.filter(function(e){return e.date&&e.date.substr(0,4)===ys&&e.date.substr(5,2)===ms;}).forEach(function(e){mExp+=parseFloat(e.amount||0);});
+  var mSal=0; DB.salaries.filter(function(r){return r.key===mk;}).forEach(function(r){mSal+=parseFloat(r.paid||0);});
+  var mExpense=mExp+mSal;
+  var mNet=mIncome-mExpense;
+
+  function row(label,val,color){return '<div class="sr" style="display:flex;justify-content:space-between;padding:7px 0;border-bottom:1px solid #eee"><span>'+label+'</span><span style="font-family:DM Mono,monospace;font-weight:600'+(color?';color:'+color:'')+'">'+fmt(val)+'</span></div>';}
+  function head(t){return '<div style="font-weight:700;color:var(--blue);margin:14px 0 6px;font-size:14px">'+t+'</div>';}
+
+  var html=head('💰 ALL-TIME INCOME');
+  html+=row('Fees Collected',allFees,'var(--green-l)');
+  html+=row('Annual Fund',allAnnual,'var(--green-l)');
+  html+=row('Summer Pack',allSummer,'var(--green-l)');
+  html+=row('Admission',allAdm,'var(--green-l)');
+  html+='<div class="sr" style="display:flex;justify-content:space-between;padding:8px 0;border-top:2px solid var(--blue);font-weight:700"><span>Total Income</span><span style="font-family:DM Mono,monospace;color:var(--green-l)">'+fmt(allIncome)+'</span></div>';
+
+  html+=head('🧾 ALL-TIME EXPENSES');
+  html+=row('General Expenses',allExp,'var(--red)');
+  html+=row('Salaries Paid',allSal,'var(--red)');
+  html+='<div class="sr" style="display:flex;justify-content:space-between;padding:8px 0;border-top:2px solid var(--blue);font-weight:700"><span>Total Expenses</span><span style="font-family:DM Mono,monospace;color:var(--red)">'+fmt(allExpense)+'</span></div>';
+
+  html+=head('🏦 INVESTMENT & OUTSTANDING');
+  html+=row('Total Investment (Capital)',allInv,'var(--blue-l)');
+  html+=row('Outstanding (Arrears to collect)',outstanding,'var(--gold)');
+
+  html+=head('📊 NET RESULT (ALL-TIME)');
+  html+='<div class="sr" style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700"><span>Net Profit (Income - Expenses)</span><span style="font-family:DM Mono,monospace;color:'+(netProfit>=0?'var(--green-l)':'var(--red)')+'">'+fmt(netProfit)+'</span></div>';
+  html+='<div class="sr" style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700;font-size:15px;border-top:2px solid var(--gold)"><span>Net After Investment</span><span style="font-family:DM Mono,monospace;color:'+(netWithInv>=0?'var(--green-l)':'var(--red)')+'">'+fmt(netWithInv)+'</span></div>';
+
+  html+=head('📅 THIS MONTH ('+MNAME[MONTHS[now.getMonth()]]+' '+now.getFullYear()+')');
+  html+=row('Income This Month',mIncome,'var(--green-l)');
+  html+=row('Expenses This Month',mExpense,'var(--red)');
+  html+='<div class="sr" style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700;border-top:2px solid var(--blue)"><span>Net This Month</span><span style="font-family:DM Mono,monospace;color:'+(mNet>=0?'var(--green-l)':'var(--red)')+'">'+fmt(mNet)+'</span></div>';
+
+  G('finance-report').innerHTML=html;
+}
+
+function printFinance() {
+  var rep=G('finance-report');
+  if(!rep||!rep.innerHTML.trim()){alert('No data!');return;}
+  var now=new Date();
+  var win=window.open('','_blank');
+  win.document.write('<!DOCTYPE html><html><head><title>Financial Summary</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;padding:24px;font-size:13px;max-width:600px;margin:0 auto}h2,h3{text-align:center}.sr{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee}</style></head><body>');
+  win.document.write('<h2>DAR-E-ARQAM SCHOOL</h2><h3>Haveli Lakha Campus</h3><h3>Financial Summary</h3><p style="text-align:center;font-size:11px;color:#666;margin-bottom:10px">Generated: '+now.toLocaleDateString('en-PK')+'</p>');
+  win.document.write(rep.innerHTML);
+  win.document.write('</body></html>');
+  win.document.close(); setTimeout(function(){win.print();},500);
+}
+
 function initFamilies() {
   var d=new Date();
   if(G('fam-mo')) G('fam-mo').value=MONTHS[d.getMonth()];
@@ -1005,6 +1143,7 @@ function renderFamilies() {
   var rows='';var idx=1;
   keys.forEach(function(k){
     var fam=fams[k];
+    var incS=G('fam-summer')&&G('fam-summer').checked;
     var totalDue=0;
     fam.children.forEach(function(s){
       if(!s.free){
@@ -1013,6 +1152,7 @@ function renderFamilies() {
         if(!rec) totalDue+=parseFloat(s.fee)+arr;
         else if(rec.partial) totalDue+=parseFloat(rec.balance||0);
       }
+      if(incS){ var spr=(DB.summer||[]).find(function(x){return x.sid===s.id;}); if(!spr) totalDue+=getSummerPrice2(s.cls); }
     });
     var names=fam.children.map(function(c){return c.name;}).join(', ');
     var classes=fam.children.map(function(c){return c.cls;}).join(', ');
@@ -1035,6 +1175,7 @@ function printFamilyVoucher(fkeyEnc) {
   var dueDate=due+'/'+String(MONTHS.indexOf(mo)+1).padStart(2,'0')+'/'+yr;
   var logoSrc=document.querySelector('img.logo')?document.querySelector('img.logo').src:'';
   var famLabel=fam.father+"'s Kids";
+  var incSummer=G('fam-summer')&&G('fam-summer').checked;
   var payHTML=getPaymentTextHTML();
   // Build one copy's inner HTML
   function buildCopy(copyLabel){
@@ -1045,8 +1186,15 @@ function printFamilyVoucher(fkeyEnc) {
       var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
       var due2=0;
       if(!s.free){ if(!rec) due2=fee+arr; else if(rec.partial) due2=parseFloat(rec.balance||0); }
-      grandTotal+=due2;
-      childRows+='<tr><td style="border:1px solid #333;padding:3px">'+s.name+'</td><td style="border:1px solid #333;padding:3px">'+s.cls+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+fmt(fee)+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+fmt(arr)+'</td><td style="border:1px solid #333;padding:3px;text-align:right;font-weight:700">'+fmt(due2)+'</td></tr>';
+      // Summer pack (only if checkbox on AND not already paid)
+      var summerAmt=0;
+      if(incSummer){
+        var spr=(DB.summer||[]).find(function(x){return x.sid===s.id;});
+        if(!spr) summerAmt=getSummerPrice2(s.cls);
+      }
+      var rowTotal=due2+summerAmt;
+      grandTotal+=rowTotal;
+      childRows+='<tr><td style="border:1px solid #333;padding:3px">'+s.name+'</td><td style="border:1px solid #333;padding:3px">'+s.cls+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+fmt(fee)+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+fmt(arr)+'</td>'+(incSummer?'<td style="border:1px solid #333;padding:3px;text-align:right">'+(summerAmt>0?fmt(summerAmt):'-')+'</td>':'')+'<td style="border:1px solid #333;padding:3px;text-align:right;font-weight:700">'+fmt(rowTotal)+'</td></tr>';
     });
     var late=grandTotal>0?grandTotal+150:0;
     var h='<div class="vcopy">';
@@ -1054,7 +1202,7 @@ function printFamilyVoucher(fkeyEnc) {
     h+='<div style="font-size:9px;margin-bottom:2px"><strong>Family:</strong> '+famLabel+'</div>';
     h+='<div style="font-size:9px;margin-bottom:2px"><strong>Father:</strong> '+fam.father+'</div>';
     h+='<div style="font-size:9px;margin-bottom:5px"><strong>Phone:</strong> '+(fam.phone||'-')+'</div>';
-    h+='<table style="width:100%;border-collapse:collapse;font-size:9px;margin-bottom:5px"><thead><tr style="background:#eee"><th style="border:1px solid #333;padding:3px">Student</th><th style="border:1px solid #333;padding:3px">Class</th><th style="border:1px solid #333;padding:3px">Fee</th><th style="border:1px solid #333;padding:3px">Arr.</th><th style="border:1px solid #333;padding:3px">Due</th></tr></thead><tbody>'+childRows+'</tbody></table>';
+    h+='<table style="width:100%;border-collapse:collapse;font-size:9px;margin-bottom:5px"><thead><tr style="background:#eee"><th style="border:1px solid #333;padding:3px">Student</th><th style="border:1px solid #333;padding:3px">Class</th><th style="border:1px solid #333;padding:3px">Fee</th><th style="border:1px solid #333;padding:3px">Arr.</th>'+(incSummer?'<th style="border:1px solid #333;padding:3px">Summer</th>':'')+'<th style="border:1px solid #333;padding:3px">Due</th></tr></thead><tbody>'+childRows+'</tbody></table>';
     h+='<div style="border:1px solid #333;padding:4px;font-size:10px;font-weight:700;text-align:center;background:#f5f5f5;margin-bottom:3px">Total by '+dueDate+': Rs. '+grandTotal.toLocaleString()+'</div>';
     h+='<div style="border:1px solid #333;padding:4px;font-size:9px;text-align:center;margin-bottom:5px">After '+dueDate+': Rs. '+late.toLocaleString()+'</div>';
     h+='<div class="vmsg"><strong>Message:</strong>'+payHTML+'</div>';
@@ -1086,6 +1234,7 @@ function familyWhatsApp(fkeyEnc) {
   var phone=fam.phone.replace(/[^0-9]/g,'');
   if(phone.charAt(0)==='0') phone='92'+phone.substring(1);
   else if(phone.substring(0,2)!=='92') phone='92'+phone;
+  var incSummer=G('fam-summer')&&G('fam-summer').checked;
   var grandTotal=0;
   var msg='Assalam-o-Alaikum!\n\nDear Parent,\nFee reminder from *Dar-e-Arqam School* (Haveli Lakha Campus).\n\n';
   msg+='*Family:* '+fam.father+"'s Kids\n\n";
@@ -1095,8 +1244,11 @@ function familyWhatsApp(fkeyEnc) {
     var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
     var due2=0;
     if(!s.free){ if(!rec) due2=fee+arr; else if(rec.partial) due2=parseFloat(rec.balance||0); }
-    grandTotal+=due2;
-    msg+='*'+s.name+'* ('+s.cls+'): Rs. '+due2.toLocaleString()+'\n';
+    var summerAmt=0;
+    if(incSummer){ var spr=(DB.summer||[]).find(function(x){return x.sid===s.id;}); if(!spr) summerAmt=getSummerPrice2(s.cls); }
+    var rowTotal=due2+summerAmt;
+    grandTotal+=rowTotal;
+    msg+='*'+s.name+'* ('+s.cls+'): Rs. '+rowTotal.toLocaleString()+(summerAmt>0?' (incl. summer pack)':'')+'\n';
   });
   msg+='\n*Grand Total: Rs. '+grandTotal.toLocaleString()+'*\n\n';
   msg+='Meharbani farma kar '+due+' tareekh tak fees jama karwa dein.\n';
