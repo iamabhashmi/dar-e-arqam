@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260604090140 -->
+<!-- v20260604091254 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -114,6 +115,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -1033,29 +1035,46 @@ function printFamilyVoucher(fkeyEnc) {
   var dueDate=due+'/'+String(MONTHS.indexOf(mo)+1).padStart(2,'0')+'/'+yr;
   var logoSrc=document.querySelector('img.logo')?document.querySelector('img.logo').src:'';
   var famLabel=fam.father+"'s Kids";
-  var grandTotal=0;
-  var childRows='';
-  fam.children.forEach(function(s){
-    var fee=s.free?0:parseFloat(s.fee||0);
-    var arr=s.free?0:GA(s.id);
-    var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
-    var due2=0;
-    if(!s.free){ if(!rec) due2=fee+arr; else if(rec.partial) due2=parseFloat(rec.balance||0); }
-    grandTotal+=due2;
-    childRows+='<tr><td style="border:1px solid #333;padding:5px">'+s.name+'</td><td style="border:1px solid #333;padding:5px">'+s.cls+'</td><td style="border:1px solid #333;padding:5px;text-align:right">'+fmt(fee)+'</td><td style="border:1px solid #333;padding:5px;text-align:right">'+fmt(arr)+'</td><td style="border:1px solid #333;padding:5px;text-align:right;font-weight:700">'+fmt(due2)+'</td></tr>';
-  });
   var payHTML=getPaymentTextHTML();
+  // Build one copy's inner HTML
+  function buildCopy(copyLabel){
+    var grandTotal=0, childRows='';
+    fam.children.forEach(function(s){
+      var fee=s.free?0:parseFloat(s.fee||0);
+      var arr=s.free?0:GA(s.id);
+      var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
+      var due2=0;
+      if(!s.free){ if(!rec) due2=fee+arr; else if(rec.partial) due2=parseFloat(rec.balance||0); }
+      grandTotal+=due2;
+      childRows+='<tr><td style="border:1px solid #333;padding:3px">'+s.name+'</td><td style="border:1px solid #333;padding:3px">'+s.cls+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+fmt(fee)+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+fmt(arr)+'</td><td style="border:1px solid #333;padding:3px;text-align:right;font-weight:700">'+fmt(due2)+'</td></tr>';
+    });
+    var late=grandTotal>0?grandTotal+150:0;
+    var h='<div class="vcopy">';
+    h+='<div style="display:flex;align-items:center;gap:6px;border-bottom:2px solid #333;padding-bottom:5px;margin-bottom:5px">'+(logoSrc?'<img src="'+logoSrc+'" style="width:38px;height:38px;border-radius:5px">':'')+'<div style="text-align:center;flex:1"><div style="font-weight:700;font-size:12px">DAR-E-ARQAM SCHOOL</div><div style="font-size:8px">(Haveli Lakha Campus)</div><div style="font-size:9px;font-weight:700">Family Voucher - '+mo+' '+yr+'</div></div></div>';
+    h+='<div style="font-size:9px;margin-bottom:2px"><strong>Family:</strong> '+famLabel+'</div>';
+    h+='<div style="font-size:9px;margin-bottom:2px"><strong>Father:</strong> '+fam.father+'</div>';
+    h+='<div style="font-size:9px;margin-bottom:5px"><strong>Phone:</strong> '+(fam.phone||'-')+'</div>';
+    h+='<table style="width:100%;border-collapse:collapse;font-size:9px;margin-bottom:5px"><thead><tr style="background:#eee"><th style="border:1px solid #333;padding:3px">Student</th><th style="border:1px solid #333;padding:3px">Class</th><th style="border:1px solid #333;padding:3px">Fee</th><th style="border:1px solid #333;padding:3px">Arr.</th><th style="border:1px solid #333;padding:3px">Due</th></tr></thead><tbody>'+childRows+'</tbody></table>';
+    h+='<div style="border:1px solid #333;padding:4px;font-size:10px;font-weight:700;text-align:center;background:#f5f5f5;margin-bottom:3px">Total by '+dueDate+': Rs. '+grandTotal.toLocaleString()+'</div>';
+    h+='<div style="border:1px solid #333;padding:4px;font-size:9px;text-align:center;margin-bottom:5px">After '+dueDate+': Rs. '+late.toLocaleString()+'</div>';
+    h+='<div class="vmsg"><strong>Message:</strong>'+payHTML+'</div>';
+    h+='<div style="text-align:center;font-weight:700;font-size:9px;border:1px solid #333;padding:3px;margin-top:4px">'+copyLabel+'</div>';
+    h+='</div>';
+    return h;
+  }
+  var copyLabels=['Parent Copy','Office Copy','Record Copy'];
+  var page='<div class="vpage">';
+  for(var j=0;j<3;j++) page+=buildCopy(copyLabels[j]);
+  page+='</div>';
   var win=window.open('','_blank');
-  win.document.write('<!DOCTYPE html><html><head><title>Family Voucher - '+famLabel+'</title><style>*{box-sizing:border-box;margin:0;padding:0;font-family:Arial,sans-serif}body{padding:20px}.v{border:2px solid #333;padding:16px;max-width:600px;margin:0 auto}.hd{display:flex;align-items:center;gap:12px;border-bottom:2px solid #333;padding-bottom:10px;margin-bottom:10px}.hd img{width:60px;height:60px;border-radius:8px}.hd h2{font-size:18px}.hd p{font-size:12px}table{width:100%;border-collapse:collapse;margin:10px 0;font-size:12px}th{background:#1a3a6b;color:#fff;border:1px solid #333;padding:5px}td{font-size:12px}.tot{font-size:16px;font-weight:700;text-align:right;padding:10px;background:#f5f5f5;border:1px solid #333}.msg{border:1px solid #333;padding:8px;margin-top:10px;font-size:11px;min-height:50px}</style></head><body>');
-  win.document.write('<div class="v"><div class="hd">'+(logoSrc?'<img src="'+logoSrc+'">':'')+'<div><h2>DAR-E-ARQAM SCHOOL</h2><p>Haveli Lakha Campus</p><p><strong>Family Fee Voucher - '+mo+' '+yr+'</strong></p></div></div>');
-  win.document.write('<p style="font-size:14px;margin-bottom:4px"><strong>Family:</strong> '+famLabel+'</p>');
-  win.document.write('<p style="font-size:13px;margin-bottom:4px"><strong>Father:</strong> '+fam.father+'</p>');
-  win.document.write('<p style="font-size:13px;margin-bottom:8px"><strong>Phone:</strong> '+(fam.phone||'-')+'</p>');
-  win.document.write('<table><thead><tr><th>Student</th><th>Class</th><th>Fee</th><th>Arrears</th><th>Total Due</th></tr></thead><tbody>'+childRows+'</tbody></table>');
-  win.document.write('<div class="tot">Grand Total Payable by '+dueDate+': Rs. '+grandTotal.toLocaleString()+'</div>');
-  win.document.write('<div class="msg"><strong>Message:</strong>'+payHTML+'</div>');
-  win.document.write('</div></body></html>');
-  win.document.close(); setTimeout(function(){win.print();},500);
+  win.document.write('<!DOCTYPE html><html><head><title>Family Voucher - '+famLabel+'</title><style>');
+  win.document.write('*{box-sizing:border-box;margin:0;padding:0}html,body{width:100%;height:100%;font-family:Arial,sans-serif;background:#fff}');
+  win.document.write('.vpage{display:flex;flex-direction:row;width:100%;height:100vh;page-break-after:always}');
+  win.document.write('.vcopy{flex:1;border:1px solid #333;padding:10px;font-size:10px;display:flex;flex-direction:column;height:100%;overflow:hidden}');
+  win.document.write('.vmsg{flex:1;border:1px solid #333;padding:5px;font-size:9px;min-height:40px}');
+  win.document.write('@media print{@page{size:A4 landscape;margin:5mm}html,body{height:100%}.vpage{height:calc(100vh - 10mm)}button{display:none}}');
+  win.document.write('</style></head><body>'+page+'</body></html>');
+  win.document.close(); setTimeout(function(){win.print();},600);
 }
 
 function familyWhatsApp(fkeyEnc) {
