@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260604103851 -->
+<!-- v20260604110033 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -133,6 +134,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -1266,7 +1268,20 @@ function printFamilyVoucher(fkeyEnc) {
       grandTotal+=rowTotal;
       childRows+='<tr><td style="border:1px solid #333;padding:3px">'+s.name+'</td><td style="border:1px solid #333;padding:3px">'+s.cls+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+fmt(fee)+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+fmt(arr)+'</td>'+(incSummer?'<td style="border:1px solid #333;padding:3px;text-align:right">'+(summerAmt>0?fmt(summerAmt):'-')+'</td>':'')+'<td style="border:1px solid #333;padding:3px;text-align:right;font-weight:700">'+fmt(rowTotal)+'</td></tr>';
     });
-    var late=grandTotal>0?grandTotal+150:0;
+    // Late fee = Rs. 150 per child who has dues
+    var childrenWithDues=0;
+    fam.children.forEach(function(s){
+      if(s.free) return;
+      var a=GA(s.id), f2=parseFloat(s.fee||0);
+      var r2=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
+      var d2=0;
+      if(!r2) d2=f2+a; else if(r2.partial) d2=parseFloat(r2.balance||0);
+      var sm=0;
+      if(incSummer){ var sp=(DB.summer||[]).find(function(x){return x.sid===s.id;}); if(!sp) sm=getSummerPrice2(s.cls); }
+      if(d2+sm>0) childrenWithDues++;
+    });
+    var lateTotal=childrenWithDues*150;
+    var late=grandTotal>0?grandTotal+lateTotal:0;
     var h='<div class="vcopy">';
     h+='<div style="display:flex;align-items:center;gap:6px;border-bottom:2px solid #333;padding-bottom:5px;margin-bottom:5px">'+(logoSrc?'<img src="'+logoSrc+'" style="width:38px;height:38px;border-radius:5px">':'')+'<div style="text-align:center;flex:1"><div style="font-weight:700;font-size:12px">DAR-E-ARQAM SCHOOL</div><div style="font-size:8px">(Haveli Lakha Campus)</div><div style="font-size:9px;font-weight:700">Family Voucher - '+mo+' '+yr+'</div></div></div>';
     h+='<div style="font-size:9px;margin-bottom:2px"><strong>Family:</strong> '+famLabel+'</div>';
@@ -1274,7 +1289,7 @@ function printFamilyVoucher(fkeyEnc) {
     h+='<div style="font-size:9px;margin-bottom:5px"><strong>Phone:</strong> '+(fam.phone||'-')+'</div>';
     h+='<table style="width:100%;border-collapse:collapse;font-size:9px;margin-bottom:5px"><thead><tr style="background:#eee"><th style="border:1px solid #333;padding:3px">Student</th><th style="border:1px solid #333;padding:3px">Class</th><th style="border:1px solid #333;padding:3px">Fee</th><th style="border:1px solid #333;padding:3px">Arr.</th>'+(incSummer?'<th style="border:1px solid #333;padding:3px">Summer</th>':'')+'<th style="border:1px solid #333;padding:3px">Due</th></tr></thead><tbody>'+childRows+'</tbody></table>';
     h+='<div style="border:1px solid #333;padding:4px;font-size:10px;font-weight:700;text-align:center;background:#f5f5f5;margin-bottom:3px">Total by '+dueDate+': Rs. '+grandTotal.toLocaleString()+'</div>';
-    h+='<div style="border:1px solid #333;padding:4px;font-size:9px;text-align:center;margin-bottom:5px">After '+dueDate+': Rs. '+late.toLocaleString()+'</div>';
+    h+='<div style="border:1px solid #333;padding:4px;font-size:9px;text-align:center;margin-bottom:5px">After '+dueDate+': Rs. '+late.toLocaleString()+' (incl. late fee Rs. '+lateTotal.toLocaleString()+')</div>';
     h+='<div class="vmsg"><strong>Message:</strong>'+payHTML+'</div>';
     h+='<div style="text-align:center;font-weight:700;font-size:9px;border:1px solid #333;padding:3px;margin-top:4px">'+copyLabel+'</div>';
     h+='</div>';
