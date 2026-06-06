@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260606060727 -->
+<!-- v20260606061714 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -137,6 +138,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -1708,19 +1710,19 @@ function showFeeNote(sid,key) {
   var r='================================\n     DAR-E-ARQAM SCHOOL\n      Haveli Lakha Campus\n        FEE REMINDER\n================================\n';
   r+='Student : '+s.name+'\nClass   : '+s.cls+'\nMonth   : '+MNAME[mo]+' '+yr+'\n';
   r+='--------------------------------\n';
-  r+='Monthly Fee : Rs. '+fmt(fee)+'\n';
-  if(arr>0) r+='Arrears     : Rs. '+fmt(arr)+'\n';
+  r+='Monthly Fee : '+fmt(fee)+'\n';
+  if(arr>0) r+='Arrears     : '+fmt(arr)+'\n';
   r+='--------------------------------\n';
-  r+='TOTAL DUE   : Rs. '+fmt(feeDue)+'\n';
+  r+='TOTAL DUE   : '+fmt(feeDue)+'\n';
   r+='--------------------------------\n';
   r+='Please pay by '+due+'th of month.\n';
   // Add payment methods if set
   var pd=DB.payInfo||{};
   if(pd.jc||pd.ep||(pd.bank&&pd.bankAcc)){
     r+='--------------------------------\nPayment Methods:\n';
-    if(pd.jc) r+='JazzCash: '+pd.jc+'\n';
-    if(pd.ep) r+='EasyPaisa: '+pd.ep+'\n';
-    if(pd.bank&&pd.bankAcc) r+=pd.bank+'\n'+pd.bankAcc+'\n';
+    if(pd.jc){ r+='JazzCash: '+pd.jc+'\n'; if(pd.jcName) r+='('+pd.jcName+')\n'; }
+    if(pd.ep){ r+='EasyPaisa: '+pd.ep+'\n'; if(pd.epName) r+='('+pd.epName+')\n'; }
+    if(pd.bank&&pd.bankAcc){ r+=pd.bank+'\n'+pd.bankAcc+'\n'; if(pd.bankName) r+='('+pd.bankName+')\n'; }
   }
   r+='--------------------------------\n';
   r+='Meharbani farma kar waqt par\n';
