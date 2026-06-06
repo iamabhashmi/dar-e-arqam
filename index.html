@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260606055501 -->
+<!-- v20260606060727 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
+
 
 
 
@@ -135,6 +137,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
+
 
 
 
@@ -1579,8 +1583,8 @@ function renderFees() {
     var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
     var arr=GA(s.id),tot=parseFloat(s.fee)+arr;
     var badge,action;
-    if(!rec){badge='<span class="bx bd">Unpaid</span>';action='<button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPM(this.dataset.id,this.dataset.key)">Collect</button>';}
-    else if(rec.partial){badge='<span class="bx borg">Partial</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bg2 sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPM(this.dataset.id,this.dataset.key)">Add More</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showFeeRcpt(this.dataset.id,this.dataset.key)">Receipt</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoFeePayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
+    if(!rec){badge='<span class="bx bd">Unpaid</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPM(this.dataset.id,this.dataset.key)">Collect</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showFeeNote(this.dataset.id,this.dataset.key)">Note</button></div>';}
+    else if(rec.partial){badge='<span class="bx borg">Partial</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bg2 sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPM(this.dataset.id,this.dataset.key)">Add More</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showFeeNote(this.dataset.id,this.dataset.key)">Note</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showFeeRcpt(this.dataset.id,this.dataset.key)">Receipt</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoFeePayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
     else{badge='<span class="bx bg">Paid</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showFeeRcpt(this.dataset.id,this.dataset.key)">Receipt</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoFeePayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
     rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.cls+'</td><td>'+fmt(s.fee)+'</td><td style="color:'+(arr>0?'var(--red)':'var(--ink-m)')+'">'+( arr>0?fmt(arr):'-')+'</td><td style="font-weight:600;color:'+(arr>0?'var(--red)':'var(--ink)')+'">'+fmt(tot)+'</td><td>'+badge+'</td><td>'+action+'</td></tr>';
   }
@@ -1689,6 +1693,40 @@ function confirmFee() {
     });
   });
   CM('ov-pm'); renderFees(); updateDash(); showFeeRcpt(_pid,_pkey);
+}
+
+function showFeeNote(sid,key) {
+  var s=DB.students.find(function(x){return x.id===sid;});
+  if(!s){alert('Student not found!');return;}
+  var parts=key.split('-'),mo=parts[0],yr=parts[1];
+  var arr=GA(s.id), fee=parseFloat(s.fee)||0;
+  var rec=DB.fees.find(function(f){return f.sid===sid&&f.key===key;});
+  var feeDue=fee+arr;
+  if(rec&&rec.partial) feeDue=parseFloat(rec.balance||0);
+  var due=GV('dfdue')||'7';
+  // Build thermal note (32 char width)
+  var r='================================\n     DAR-E-ARQAM SCHOOL\n      Haveli Lakha Campus\n        FEE REMINDER\n================================\n';
+  r+='Student : '+s.name+'\nClass   : '+s.cls+'\nMonth   : '+MNAME[mo]+' '+yr+'\n';
+  r+='--------------------------------\n';
+  r+='Monthly Fee : Rs. '+fmt(fee)+'\n';
+  if(arr>0) r+='Arrears     : Rs. '+fmt(arr)+'\n';
+  r+='--------------------------------\n';
+  r+='TOTAL DUE   : Rs. '+fmt(feeDue)+'\n';
+  r+='--------------------------------\n';
+  r+='Please pay by '+due+'th of month.\n';
+  // Add payment methods if set
+  var pd=DB.payInfo||{};
+  if(pd.jc||pd.ep||(pd.bank&&pd.bankAcc)){
+    r+='--------------------------------\nPayment Methods:\n';
+    if(pd.jc) r+='JazzCash: '+pd.jc+'\n';
+    if(pd.ep) r+='EasyPaisa: '+pd.ep+'\n';
+    if(pd.bank&&pd.bankAcc) r+=pd.bank+'\n'+pd.bankAcc+'\n';
+  }
+  r+='--------------------------------\n';
+  r+='Meharbani farma kar waqt par\n';
+  r+='fees jama karwayen. Shukria.\n';
+  r+='================================\n      Dar-e-Arqam School\n================================';
+  showRcpt(r, s.name.replace(/ /g,'-')+'-FeeNote-'+MNAME[mo]+'-'+yr);
 }
 
 function showFeeRcpt(sid,key) {
