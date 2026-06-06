@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260606061714 -->
+<!-- v20260606062713 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -138,6 +139,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -1744,7 +1746,7 @@ function showFeeRcpt(sid,key) {
   if(arr>0) r+='Arrears   : '+fmt(arr)+'\nTotal Due : '+fmt(tot)+'\n';
   r+='--------------------------------\nPaid      : '+fmt(paid)+'\n';
   if(f.partial&&bal>0){r+='Balance   : '+fmt(bal)+'\n--------------------------------\n  STATUS: PARTIAL PAYMENT\n  Balance added to arrears\n';}
-  else{r+='--------------------------------\n   STATUS: PAID IN FULL\n';}
+  else{r+='--------------------------------\n   *** PAID IN FULL ***\n     #####################\n     #      PAID         #\n     #####################\n';}
   r+='================================\n        Thank you!\n    Dar-e-Arqam School\n================================';
   showRcpt(r,s.name.replace(/ /g,'-')+'-Fee-'+MNAME[mo]+'-'+yr);
 }
@@ -2851,6 +2853,25 @@ function saveReceipt() {
     else if(isHdr){ctx.fillStyle='#000000';ctx.font='bold '+(fontSize+2)+'px "Courier New",Courier,monospace';}
     else{ctx.fillStyle='#111111';ctx.font=fontSize+'px "Courier New",Courier,monospace';}
     ctx.fillText(line,padX,padY+i*lineHeight);
+  }
+  // Draw diagonal PAID watermark if receipt is paid in full
+  if(txt.indexOf('PAID IN FULL')>=0 || txt.indexOf('PAID')>=0 && txt.indexOf('FEE REMINDER')<0){
+    ctx.save();
+    ctx.translate(canvasW/2, canvasH/2);
+    ctx.rotate(-Math.PI/7);
+    ctx.globalAlpha=0.18;
+    ctx.fillStyle='#1a6b4a';
+    ctx.font='bold 110px "Arial",sans-serif';
+    ctx.textAlign='center';
+    ctx.textBaseline='middle';
+    ctx.fillText('PAID',0,0);
+    // Border around PAID
+    ctx.globalAlpha=0.22;
+    ctx.strokeStyle='#1a6b4a';
+    ctx.lineWidth=6;
+    var tw=ctx.measureText('PAID').width;
+    ctx.strokeRect(-tw/2-20,-60,tw+40,120);
+    ctx.restore();
   }
   var a=document.createElement('a');
   a.href=canvas.toDataURL('image/jpeg',0.95);
