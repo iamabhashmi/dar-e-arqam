@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260608061235 -->
+<!-- v20260608062943 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -144,6 +145,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -640,7 +642,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
       <select id="fb-student" onchange="renderFeeBook()"><option value="">-- Select Student --</option></select>
       <label>Session:</label>
       <select id="fb-session" onchange="renderFeeBook()"><option value="2024-25">2024-25</option><option value="2025-26" selected>2025-26</option><option value="2026-27">2026-27</option></select>
-      <button class="btn bo sm" onclick="printFeeBook()">Print A4 Sheet</button>
+      <button class="btn bp sm" onclick="printFeeBook()">Print</button>
     </div>
   </div>
   <div class="card">
@@ -1384,7 +1386,7 @@ function printFeeBook() {
   var html=buildFeeBookHTML(data, true);
   var win=window.open('','_blank');
   win.document.write('<!DOCTYPE html><html><head><title>Fee Book - '+data.student.name+'</title>');
-  win.document.write('<style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;padding:10px}@media print{@page{size:A4 portrait;margin:8mm}button{display:none}}</style>');
+  win.document.write('<style>*{box-sizing:border-box;margin:0;padding:0;-webkit-print-color-adjust:exact!important;print-color-adjust:exact!important;color-adjust:exact!important}body{font-family:Arial,sans-serif;padding:10px}@media print{@page{size:A4 portrait;margin:8mm}button{display:none}}</style>');
   win.document.write('</head><body>'+html+'</body></html>');
   win.document.close(); setTimeout(function(){win.print();},600);
 }
