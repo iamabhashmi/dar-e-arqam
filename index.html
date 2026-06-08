@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260606062713 -->
+<!-- v20260608033901 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
+
 
 
 
@@ -139,6 +141,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
+
 
 
 
@@ -926,6 +930,64 @@ function GSA(id) {
   }
   return total;
 }
+
+// ===== CENTRAL DUES CALCULATION (single source of truth) =====
+// Detects the current active session from existing summer/annual records
+function getCurrentSession() {
+  var sessions={};
+  (DB.summer||[]).forEach(function(x){if(x.yr)sessions[x.yr]=(sessions[x.yr]||0)+1;});
+  (DB.annual||[]).forEach(function(x){if(x.yr)sessions[x.yr]=(sessions[x.yr]||0)+1;});
+  var session='',maxC=0;
+  Object.keys(sessions).forEach(function(k){if(sessions[k]>maxC){maxC=sessions[k];session=k;}});
+  return session||'2025-26';
+}
+
+// Returns complete dues breakdown for a student for a given month key.
+// opts: {session, includeSummer, includeAnnual, annualAmount}
+// A charge is ONLY included if the student has NOT already paid/settled it.
+function getStudentDues(sid, monthKey, opts) {
+  opts = opts || {};
+  var s = DB.students.find(function(x){return x.id===sid;});
+  if(!s) return {fee:0,arrears:0,feeDue:0,summer:0,annual:0,total:0,student:null};
+  var session = opts.session || getCurrentSession();
+  var includeSummer = opts.includeSummer!==false; // default true
+  var includeAnnual = opts.includeAnnual!==false; // default true
+  var annualAmount = opts.annualAmount || 2000;
+
+  // Fee + arrears (free students owe no fee)
+  var fee = s.free ? 0 : parseFloat(s.fee||0);
+  var arrears = s.free ? 0 : GA(sid);
+  var feeDue = 0;
+  if(!s.free){
+    var rec = DB.fees.find(function(f){return f.sid===sid && f.key===monthKey;});
+    if(!rec) feeDue = fee + arrears;
+    else if(rec.partial) feeDue = parseFloat(rec.balance||0);
+  }
+
+  // Summer pack — only if not paid/settled this session
+  var summer = 0;
+  if(includeSummer){
+    var sumRec = (DB.summer||[]).find(function(x){return x.sid===sid && x.yr===session;});
+    if(!sumRec) summer = getSummerPrice2(s.cls);
+  }
+
+  // Annual fund — only if not paid/settled this session
+  var annual = 0;
+  if(includeAnnual){
+    var anRec = (DB.annual||[]).find(function(x){return x.sid===sid && x.yr===session;});
+    if(!anRec) annual = annualAmount;
+  }
+
+  return {
+    fee: fee,
+    arrears: arrears,
+    feeDue: feeDue,
+    summer: summer,
+    annual: annual,
+    total: feeDue + summer + annual,
+    student: s
+  };
+}
 function CM(id) { document.getElementById(id).classList.remove('on'); }
 function OM(id) { document.getElementById(id).classList.add('on'); }
 function G(id)  { return document.getElementById(id); }
@@ -1226,13 +1288,8 @@ function renderFamilies() {
     var incS=G('fam-summer')&&G('fam-summer').checked;
     var totalDue=0;
     fam.children.forEach(function(s){
-      if(!s.free){
-        var arr=GA(s.id);
-        var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
-        if(!rec) totalDue+=parseFloat(s.fee)+arr;
-        else if(rec.partial) totalDue+=parseFloat(rec.balance||0);
-      }
-      if(incS){ var spr=(DB.summer||[]).find(function(x){return x.sid===s.id;}); if(!spr) totalDue+=getSummerPrice2(s.cls); }
+      var dd=getStudentDues(s.id,key,{includeSummer:incS,includeAnnual:false});
+      totalDue+=dd.feeDue+dd.summer;
     });
     var names=fam.children.map(function(c){return c.name;}).join(', ');
     var classes=fam.children.map(function(c){return c.cls;}).join(', ');
@@ -1263,17 +1320,8 @@ function printFamilyVoucher(fkeyEnc) {
   function buildCopy(copyLabel){
     var grandTotal=0, childRows='';
     fam.children.forEach(function(s){
-      var fee=s.free?0:parseFloat(s.fee||0);
-      var arr=s.free?0:GA(s.id);
-      var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
-      var due2=0;
-      if(!s.free){ if(!rec) due2=fee+arr; else if(rec.partial) due2=parseFloat(rec.balance||0); }
-      // Summer pack (only if checkbox on AND not already paid)
-      var summerAmt=0;
-      if(incSummer){
-        var spr=(DB.summer||[]).find(function(x){return x.sid===s.id;});
-        if(!spr) summerAmt=getSummerPrice2(s.cls);
-      }
+      var dd=getStudentDues(s.id,key,{includeSummer:incSummer,includeAnnual:false});
+      var fee=dd.fee, arr=dd.arrears, due2=dd.feeDue, summerAmt=dd.summer;
       var rowTotal=due2+summerAmt;
       grandTotal+=rowTotal;
       childRows+='<tr><td style="border:1px solid #333;padding:3px">'+s.name+'</td><td style="border:1px solid #333;padding:3px">'+s.cls+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+fmt(fee)+'</td><td style="border:1px solid #333;padding:3px;text-align:right">'+fmt(arr)+'</td>'+(incSummer?'<td style="border:1px solid #333;padding:3px;text-align:right">'+(summerAmt>0?fmt(summerAmt):'-')+'</td>':'')+'<td style="border:1px solid #333;padding:3px;text-align:right;font-weight:700">'+fmt(rowTotal)+'</td></tr>';
@@ -1281,14 +1329,8 @@ function printFamilyVoucher(fkeyEnc) {
     // Late fee = Rs. 150 per child who has dues
     var childrenWithDues=0;
     fam.children.forEach(function(s){
-      if(s.free) return;
-      var a=GA(s.id), f2=parseFloat(s.fee||0);
-      var r2=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
-      var d2=0;
-      if(!r2) d2=f2+a; else if(r2.partial) d2=parseFloat(r2.balance||0);
-      var sm=0;
-      if(incSummer){ var sp=(DB.summer||[]).find(function(x){return x.sid===s.id;}); if(!sp) sm=getSummerPrice2(s.cls); }
-      if(d2+sm>0) childrenWithDues++;
+      var dd=getStudentDues(s.id,key,{includeSummer:incSummer,includeAnnual:false});
+      if(dd.feeDue+dd.summer>0) childrenWithDues++;
     });
     var lateTotal=childrenWithDues*150;
     var late=grandTotal>0?grandTotal+lateTotal:0;
@@ -1334,19 +1376,10 @@ function openFamilyPay(fkeyEnc) {
   // Build breakdown of what each child owes
   var totalDue=0, breakdown='';
   fam.children.forEach(function(s){
-    var childDue=0, parts=[];
-    if(!s.free){
-      var arr=GA(s.id);
-      var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
-      var feeDue=0;
-      if(!rec) feeDue=parseFloat(s.fee)+arr;
-      else if(rec.partial) feeDue=parseFloat(rec.balance||0);
-      if(feeDue>0){ childDue+=feeDue; parts.push('Fee: '+fmt(feeDue)); }
-    }
-    if(incSummer){
-      var spr=(DB.summer||[]).find(function(x){return x.sid===s.id;});
-      if(!spr){ var sa=getSummerPrice2(s.cls); childDue+=sa; parts.push('Summer: '+fmt(sa)); }
-    }
+    var dd=getStudentDues(s.id,key,{includeSummer:incSummer,includeAnnual:false});
+    var childDue=dd.feeDue+dd.summer, parts=[];
+    if(dd.feeDue>0) parts.push('Fee: '+fmt(dd.feeDue));
+    if(dd.summer>0) parts.push('Summer: '+fmt(dd.summer));
     totalDue+=childDue;
     if(childDue>0) breakdown+='<div style="display:flex;justify-content:space-between;padding:3px 0;border-bottom:1px solid #eee"><span>'+s.name+' ('+s.cls+')</span><span>'+parts.join(', ')+'</span></div>';
   });
@@ -1449,16 +1482,10 @@ function familyWhatsApp(fkeyEnc) {
   var msg='Assalam-o-Alaikum!\n\nDear Parent,\nFee reminder from *Dar-e-Arqam School* (Haveli Lakha Campus).\n\n';
   msg+='*Family:* '+fam.father+"'s Kids\n\n";
   fam.children.forEach(function(s){
-    var fee=s.free?0:parseFloat(s.fee||0);
-    var arr=s.free?0:GA(s.id);
-    var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
-    var due2=0;
-    if(!s.free){ if(!rec) due2=fee+arr; else if(rec.partial) due2=parseFloat(rec.balance||0); }
-    var summerAmt=0;
-    if(incSummer){ var spr=(DB.summer||[]).find(function(x){return x.sid===s.id;}); if(!spr) summerAmt=getSummerPrice2(s.cls); }
-    var rowTotal=due2+summerAmt;
+    var dd=getStudentDues(s.id,key,{includeSummer:incSummer,includeAnnual:false});
+    var rowTotal=dd.feeDue+dd.summer;
     grandTotal+=rowTotal;
-    msg+='*'+s.name+'* ('+s.cls+'): Rs. '+rowTotal.toLocaleString()+(summerAmt>0?' (incl. summer pack)':'')+'\n';
+    msg+='*'+s.name+'* ('+s.cls+'): Rs. '+rowTotal.toLocaleString()+(dd.summer>0?' (incl. summer pack)':'')+'\n';
   });
   msg+='\n*Grand Total: Rs. '+grandTotal.toLocaleString()+'*\n\n';
   msg+='Meharbani farma kar '+due+' tareekh tak fees jama karwa dein.\n';
@@ -1703,22 +1730,19 @@ function showFeeNote(sid,key) {
   var s=DB.students.find(function(x){return x.id===sid;});
   if(!s){alert('Student not found!');return;}
   var parts=key.split('-'),mo=parts[0],yr=parts[1];
-  var arr=GA(s.id), fee=parseFloat(s.fee)||0;
-  var rec=DB.fees.find(function(f){return f.sid===sid&&f.key===key;});
-  var feeDue=fee+arr;
-  if(rec&&rec.partial) feeDue=parseFloat(rec.balance||0);
   var due=GV('dfdue')||'7';
-  // Build thermal note (32 char width)
+  var d=getStudentDues(sid,key);
   var r='================================\n     DAR-E-ARQAM SCHOOL\n      Haveli Lakha Campus\n        FEE REMINDER\n================================\n';
   r+='Student : '+s.name+'\nClass   : '+s.cls+'\nMonth   : '+MNAME[mo]+' '+yr+'\n';
   r+='--------------------------------\n';
-  r+='Monthly Fee : '+fmt(fee)+'\n';
-  if(arr>0) r+='Arrears     : '+fmt(arr)+'\n';
+  r+='Monthly Fee : '+fmt(d.fee)+'\n';
+  if(d.arrears>0) r+='Arrears     : '+fmt(d.arrears)+'\n';
+  if(d.summer>0) r+='Summer Pack : '+fmt(d.summer)+'\n';
+  if(d.annual>0) r+='Annual Fund : '+fmt(d.annual)+'\n';
   r+='--------------------------------\n';
-  r+='TOTAL DUE   : '+fmt(feeDue)+'\n';
+  r+='TOTAL DUE   : '+fmt(d.total)+'\n';
   r+='--------------------------------\n';
   r+='Please pay by '+due+'th of month.\n';
-  // Add payment methods if set
   var pd=DB.payInfo||{};
   if(pd.jc||pd.ep||(pd.bank&&pd.bankAcc)){
     r+='--------------------------------\nPayment Methods:\n';
@@ -2244,20 +2268,10 @@ function renderPayables() {
   var rows='', gFee=0, gSummer=0, gAnnual=0, gTotal=0, countDue=0;
   for(var i=0;i<list.length;i++){
     var s=list[i];
-    var feeDue=0;
-    if(!s.free){
-      var arr=GA(s.id);
-      var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
-      if(!rec) feeDue=parseFloat(s.fee)+arr;
-      else if(rec.partial) feeDue=parseFloat(rec.balance||0);
-    }
-    var summerDue=0;
+    var dd=getStudentDues(s.id,key,{session:session});
+    var feeDue=dd.feeDue, summerDue=dd.summer, annualDue=dd.annual, total=dd.total;
     var sumRec=(DB.summer||[]).find(function(x){return x.sid===s.id&&x.yr===session;});
-    if(!sumRec) summerDue=getSummerPrice2(s.cls);
-    var annualDue=0;
     var anRec=(DB.annual||[]).find(function(x){return x.sid===s.id&&x.yr===session;});
-    if(!anRec) annualDue=2000;
-    var total=feeDue+summerDue+annualDue;
     gFee+=feeDue; gSummer+=summerDue; gAnnual+=annualDue; gTotal+=total;
     if(total>0) countDue++;
     var fc=feeDue>0?'color:var(--red)':'color:var(--ink-m)';
@@ -2377,40 +2391,23 @@ function getPaymentTextHTML() {
 function sendWhatsApp(sid, mo) {
   var s=DB.students.find(function(x){return x.id===sid;});
   if(!s||!s.phone){alert('No phone number for this student!');return;}
-  var arr=GA(s.id);
-  var fee=parseFloat(s.fee)||0;
   var due=GV('dfdue')||'7';
-  // Get current session (most used from existing records)
-  var sessions={};
-  (DB.summer||[]).forEach(function(x){if(x.yr)sessions[x.yr]=(sessions[x.yr]||0)+1;});
-  (DB.annual||[]).forEach(function(x){if(x.yr)sessions[x.yr]=(sessions[x.yr]||0)+1;});
-  var session='', maxC=0;
-  Object.keys(sessions).forEach(function(k){if(sessions[k]>maxC){maxC=sessions[k];session=k;}});
-  if(!session) session='2025-26';
-  // Summer pack due (only if not paid/settled)
-  var summerDue=0;
-  var sumRec=(DB.summer||[]).find(function(x){return x.sid===s.id&&x.yr===session;});
-  if(!sumRec) summerDue=getSummerPrice2(s.cls);
-  // Annual fund due (only if not paid/settled)
-  var annualDue=0;
-  var anRec=(DB.annual||[]).find(function(x){return x.sid===s.id&&x.yr===session;});
-  if(!anRec) annualDue=2000;
-  var totalDue=fee+arr+summerDue+annualDue;
-  // Format phone — convert 03xx to 92xx for WhatsApp
+  // Build month key from the defaulters page selection
+  var key=(GV('dfmo')||MONTHS[new Date().getMonth()])+'-'+(GV('dfyr')||new Date().getFullYear());
+  var d=getStudentDues(sid,key);
   var phone=s.phone.replace(/[^0-9]/g,'');
   if(phone.charAt(0)==='0') phone='92'+phone.substring(1);
   else if(phone.substring(0,2)!=='92') phone='92'+phone;
-  // Build mixed Urdu+English message
   var msg='Assalam-o-Alaikum!\n\n';
   msg+='Dear Parent,\n';
   msg+='This is a fee reminder from *Dar-e-Arqam School* (Haveli Lakha Campus).\n\n';
   msg+='*Student:* '+s.name+'\n';
   msg+='*Class:* '+s.cls+'\n';
-  msg+='*Monthly Fee:* Rs. '+fee.toLocaleString()+'\n';
-  if(arr>0) msg+='*Arrears:* Rs. '+arr.toLocaleString()+'\n';
-  if(summerDue>0) msg+='*Summer Pack:* Rs. '+summerDue.toLocaleString()+'\n';
-  if(annualDue>0) msg+='*Annual Fund:* Rs. '+annualDue.toLocaleString()+'\n';
-  msg+='*Total Payable:* Rs. '+totalDue.toLocaleString()+'\n\n';
+  msg+='*Monthly Fee:* Rs. '+d.fee.toLocaleString()+'\n';
+  if(d.arrears>0) msg+='*Arrears:* Rs. '+d.arrears.toLocaleString()+'\n';
+  if(d.summer>0) msg+='*Summer Pack:* Rs. '+d.summer.toLocaleString()+'\n';
+  if(d.annual>0) msg+='*Annual Fund:* Rs. '+d.annual.toLocaleString()+'\n';
+  msg+='*Total Payable:* Rs. '+d.total.toLocaleString()+'\n\n';
   msg+='Meharbani farma kar '+due+' tareekh tak fees jama karwa dein.\n';
   msg+=getPaymentTextWA();
   msg+='\nShukria!\nDar-e-Arqam School';
