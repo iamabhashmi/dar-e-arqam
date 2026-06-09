@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260608062943 -->
+<!-- v20260609031336 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -145,6 +146,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -600,9 +602,10 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
     <label style="display:flex;align-items:center;gap:5px;cursor:pointer"><input type="checkbox" id="fam-summer" style="width:16px;height:16px"> Include Summer Pack</label>
     <button class="btn bp sm" onclick="renderFamilies()">Show Families</button>
   </div>
+  <div class="card" id="fam-summary-card" style="display:none"><div class="ct">Summary</div><div id="fam-summary"></div></div>
   <div class="card">
-    <div class="ct">Family Contact List</div>
-    <div style="margin-bottom:10px"><button class="btn bo sm" onclick="printFamilyContacts()">Print Contact List</button></div>
+    <div class="ct">Family Dues List</div>
+    <div style="margin-bottom:10px;display:flex;gap:8px;flex-wrap:wrap"><button class="btn bo sm" onclick="printFamilyContacts()">Print Contact List</button><button class="btn bp sm" onclick="printFamilyDues()">Print Dues List</button></div>
     <div class="tw"><table><thead><tr><th>#</th><th>Father</th><th>Phone</th><th>Children</th><th>Classes</th><th>Total Due</th><th>Action</th></tr></thead><tbody id="fam-tb"></tbody></table></div>
   </div>
 </div>
@@ -1540,8 +1543,27 @@ function renderFamilies() {
     if(fam.phone) rows+='<button class="btn sm" style="background:#25D366;color:#fff" data-f="'+encodeURIComponent(k)+'" onclick="familyWhatsApp(this.dataset.f)">WhatsApp</button>';
     rows+='</div></td></tr>';
   });
-  // Add Action column header dynamically isn't needed; we included an extra td. Fix header via JS:
   tb.innerHTML=rows;
+  // Summary
+  var totalFamilies=keys.length;
+  var familiesWithDues=0, grandDue=0;
+  keys.forEach(function(k){
+    var fam=fams[k]; var incS=G('fam-summer')&&G('fam-summer').checked;
+    var fd=0;
+    fam.children.forEach(function(s){
+      var dd=getStudentDues(s.id,key,{includeSummer:incS,includeAnnual:false});
+      fd+=dd.feeDue+dd.summer;
+    });
+    if(fd>0) familiesWithDues++;
+    grandDue+=fd;
+  });
+  var sc=G('fam-summary-card'), sm=G('fam-summary');
+  if(sc&&sm){
+    sc.style.display='block';
+    sm.innerHTML='<div class="sr" style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee"><span>Total Families</span><span class="am" style="font-weight:700">'+totalFamilies+'</span></div>'
+      +'<div class="sr" style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee"><span>Families with Dues</span><span class="am" style="font-weight:700;color:var(--red)">'+familiesWithDues+'</span></div>'
+      +'<div class="sr" style="display:flex;justify-content:space-between;padding:8px 0;font-weight:700;font-size:15px;border-top:2px solid var(--blue)"><span>Total Outstanding</span><span class="am" style="color:var(--red)">'+fmt(grandDue)+'</span></div>';
+  }
 }
 
 function printFamilyVoucher(fkeyEnc) {
@@ -1731,6 +1753,36 @@ function familyWhatsApp(fkeyEnc) {
   msg+=getPaymentTextWA();
   msg+='\nShukria!\nDar-e-Arqam School';
   window.open('https://wa.me/'+phone+'?text='+encodeURIComponent(msg),'_blank');
+}
+
+function printFamilyDues() {
+  var mo=GV('fam-mo'),yr=GV('fam-yr'),key=mo+'-'+yr;
+  var incS=G('fam-summer')&&G('fam-summer').checked;
+  var fams=getFamilies();
+  var keys=Object.keys(fams).sort(function(a,b){return fams[a].father.localeCompare(fams[b].father);});
+  if(!keys.length){alert('No families!');return;}
+  var rows='';var idx=1, grandTotal=0, withDues=0;
+  keys.forEach(function(k){
+    var fam=fams[k];
+    var totalDue=0;
+    fam.children.forEach(function(s){
+      var dd=getStudentDues(s.id,key,{includeSummer:incS,includeAnnual:false});
+      totalDue+=dd.feeDue+dd.summer;
+    });
+    if(totalDue<=0) return; // only show families WITH dues
+    withDues++;
+    grandTotal+=totalDue;
+    var names=fam.children.map(function(c){return c.name;}).join(', ');
+    rows+='<tr><td>'+(idx++)+'</td><td>'+fam.father+"'s Kids</td><td>"+(fam.phone||'-')+'</td><td>'+names+'</td><td style="text-align:right;font-weight:700;color:#c0392b">Rs. '+totalDue.toLocaleString()+'</td></tr>';
+  });
+  var win=window.open('','_blank');
+  win.document.write('<!DOCTYPE html><html><head><title>Family Dues List</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;padding:20px;font-size:12px}h2,h3{text-align:center}table{width:100%;border-collapse:collapse;margin-top:12px}th{background:#1a3a6b;color:#fff;padding:8px;text-align:left;font-size:11px}td{padding:7px 8px;border-bottom:1px solid #ddd;font-size:11px}tr:nth-child(even) td{background:#f7f9fb}.sum{margin-top:14px;text-align:right;font-size:14px;font-weight:700;color:#c0392b}</style></head><body>');
+  win.document.write('<h2>DAR-E-ARQAM SCHOOL</h2><h3>Haveli Lakha Campus</h3><h3>Family Dues List - '+mo+' '+yr+'</h3>');
+  win.document.write('<p style="text-align:center;font-size:12px;color:#666">Families with Dues: '+withDues+'</p>');
+  win.document.write('<table><thead><tr><th>#</th><th>Family</th><th>Phone</th><th>Children</th><th style="text-align:right">Total Due</th></tr></thead><tbody>'+rows+'</tbody></table>');
+  win.document.write('<div class="sum">GRAND TOTAL OUTSTANDING: Rs. '+grandTotal.toLocaleString()+'</div>');
+  win.document.write('</body></html>');
+  win.document.close(); setTimeout(function(){win.print();},500);
 }
 
 function printFamilyContacts() {
