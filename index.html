@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260611041648 -->
+<!-- v20260611043539 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -150,6 +151,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -1644,7 +1646,7 @@ function printFamilyVoucher(fkeyEnc) {
   win.document.close(); setTimeout(function(){win.print();},800);
 }
 
-var _famKey=null, _famSession=null;
+var _famKey=null, _famSession=null, _famTotalDue=0;
 
 function openFamilyPay(fkeyEnc) {
   if(viewerBlock()) return;
@@ -1668,14 +1670,13 @@ function openFamilyPay(fkeyEnc) {
   G('fampay-title').textContent="Collect — "+fam.father+"'s Kids";
   G('fampay-info').innerHTML='<strong>'+fam.father+"'s Kids</strong> | Phone: "+(fam.phone||'-')+' | '+mo+' '+yr;
   G('fampay-breakdown').innerHTML=breakdown||'<em>No dues</em>';
-  G('fampay-due').value=fmt(totalDue);
+  G('fampay-due').value=fmt(totalDue); _famTotalDue=totalDue;
   G('fampay-amt').value=''; G('fampay-res').style.display='none';
   OM('ov-fampay');
 }
 
 function fampayUpdate() {
-  var due=GN('fampay-amt');
-  var totalDue=parseFloat((G('fampay-due').value||'0').replace(/[^0-9.]/g,''));
+  var totalDue=_famTotalDue;
   var rec=GN('fampay-amt'),bal=totalDue-rec;
   G('fampay-rec').textContent=fmt(rec);
   G('fampay-bal').textContent=bal>0?fmt(bal):'Fully Paid';
@@ -1690,7 +1691,7 @@ function confirmFamilyPay() {
   if(!fam){alert('Family not found');return;}
   var key=_famSession;
   var incSummer=G('fam-summer')&&G('fam-summer').checked;
-  var totalDue=parseFloat((G('fampay-due').value||'0').replace(/[^0-9.]/g,''));
+  var totalDue=_famTotalDue;
   var receiving=GN('fampay-amt');
   if(!receiving||receiving<=0){showAlert('a-fampay','Enter amount',true);return;}
   if(receiving>totalDue){
