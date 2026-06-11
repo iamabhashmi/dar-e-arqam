@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260611033142 -->
+<!-- v20260611035458 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -148,6 +149,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -739,6 +741,11 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
   </div>
   <div class="card"><div class="ct">Export Data</div><div id="estats" class="ib"></div><p style="font-size:12px;color:var(--ink-s);margin-bottom:12px">Saves all your data as a .json file.</p><button class="btn bp" onclick="exportData()">Download Backup</button></div>
   <div class="card"><div class="ct">Import Data</div><div class="wb">Warning: This replaces ALL current data. Export first!</div><div class="fg"><label>Select .json backup file</label><input type="file" id="impf" accept=".json" style="background:#fff"></div><div id="a-imp" class="al"></div><button class="btn bg2" onclick="importData()">Restore Backup</button></div>
+  <div class="card">
+    <div class="ct">Maintenance</div>
+    <p style="font-size:12px;color:var(--ink-s);margin-bottom:10px">Remove duplicate fee records (same student + same month). Keeps the record with the most payment.</p>
+    <button class="btn br" onclick="cleanupDuplicateFees()">Clean Duplicate Fee Records</button>
+  </div>
 </div>
 </div><!-- end main-content -->
 
@@ -1002,27 +1009,23 @@ function getStudentDues(sid, monthKey, opts) {
   var includeAnnual = opts.includeAnnual!==false; // default true
   var annualAmount = opts.annualAmount || 2000;
 
-  // Fee + arrears (free students owe no fee)
+  // Fee + arrears — student.arr (live) is the SINGLE SOURCE OF TRUTH for arrears.
+  // feeDue = current monthly fee + live arrears (minus what's paid toward this month).
   var fee = s.free ? 0 : parseFloat(s.fee||0);
-  var arrears = s.free ? 0 : GA(sid);
+  var liveArr = s.free ? 0 : parseFloat(s.arr||0);
+  var arrears = liveArr;
   var feeDue = 0;
-  var paidThisMonth = 0;
   if(!s.free){
     var rec = DB.fees.find(function(f){return f.sid===sid && f.key===monthKey;});
     if(!rec){
-      // No payment this month: owe full fee + arrears
-      feeDue = fee + arrears;
-    } else if(rec.partial){
-      // Partial payment: balance is the remaining (already accounts for fee+arrears minus paid)
-      feeDue = parseFloat(rec.balance||0);
-      paidThisMonth = parseFloat(rec.paid||0);
-      // For display consistency: arrears shown = remaining minus this month's fee (if positive)
-      // The balance already includes everything, so present it cleanly:
-      arrears = Math.max(0, feeDue - fee);
+      // No payment recorded this month: owe full monthly fee + live arrears
+      feeDue = fee + liveArr;
     } else {
-      // Fully paid this month
-      feeDue = 0;
-      arrears = 0;
+      // A payment record exists for this month. Its balance is the remaining amount
+      // (this already reflects fee + arrears - paid). Trust the balance.
+      feeDue = rec.partial ? parseFloat(rec.balance||0) : 0;
+      // Present arrears consistently so fee + arrears = feeDue
+      arrears = Math.max(0, feeDue - fee);
     }
   }
 
@@ -3100,6 +3103,37 @@ function clearActivityLog() {
 }
 
 /* ---- BACKUP ---- */
+function cleanupDuplicateFees() {
+  if(viewerBlock()) return;
+  if(!confirm('This will remove duplicate fee records (same student + same month), keeping the one with the most payment progress. Continue?')) return;
+  var seen={}, toKeep=[], removed=0;
+  // Group by sid+key
+  var groups={};
+  DB.fees.forEach(function(f){
+    if(f.opening){ toKeep.push(f); return; } // keep opening income records
+    var k=f.sid+'|'+f.key;
+    if(!groups[k]) groups[k]=[];
+    groups[k].push(f);
+  });
+  Object.keys(groups).forEach(function(k){
+    var recs=groups[k];
+    if(recs.length===1){ toKeep.push(recs[0]); return; }
+    // Multiple records for same student+month: keep the one with highest paid
+    recs.sort(function(a,b){ return parseFloat(b.paid||0)-parseFloat(a.paid||0); });
+    toKeep.push(recs[0]);
+    removed += recs.length-1;
+    // Remove the others from Firebase
+    for(var i=1;i<recs.length;i++){
+      var rno=recs[i].rno||recs[i].id;
+      if(rno) db.ref('fees/'+rno).remove();
+    }
+  });
+  DB.fees=toKeep;
+  save();
+  alert('Cleanup done! Removed '+removed+' duplicate fee record(s).');
+  updateDash();
+}
+
 function exportData() {
   if(!DB.summer) DB.summer=[];
   var bk={v:'2.0',date:new Date().toISOString(),data:JSON.parse(JSON.stringify(DB))};
