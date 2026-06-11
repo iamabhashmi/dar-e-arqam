@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260611050010 -->
+<!-- v20260611143231 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
+
 
 
 
@@ -153,6 +155,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
+
 
 
 
@@ -751,6 +755,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
   <div class="card"><div class="ct">Import Data</div><div class="wb">Warning: This replaces ALL current data. Export first!</div><div class="fg"><label>Select .json backup file</label><input type="file" id="impf" accept=".json" style="background:#fff"></div><div id="a-imp" class="al"></div><button class="btn bg2" onclick="importData()">Restore Backup</button></div>
   <div class="card">
     <div class="ct">Maintenance</div>
+    <p style="font-size:12px;color:var(--ink-s);margin-bottom:10px"><strong>Ledger System:</strong> Locks in each student's current verified dues, then calculates all future dues automatically from payment history — no stored arrears, no inconsistencies. One-time upgrade.</p>
+    <button class="btn bp" onclick="migrateToLedger()" style="margin-bottom:14px">Upgrade to Ledger System</button>
     <p style="font-size:12px;color:var(--ink-s);margin-bottom:10px">Remove duplicate fee records (same student + same month). Keeps the record with the most payment.</p>
     <button class="btn br" onclick="cleanupDuplicateFees()">Clean Duplicate Fee Records</button>
   </div>
@@ -995,6 +1001,14 @@ function GSA(id) {
 }
 
 // ===== CENTRAL DUES CALCULATION (single source of truth) =====
+// Month index helper: 'Jun-2026' -> absolute month number for arithmetic
+function MIDX(key){
+  var p=(key||'').split('-');
+  var mi=MONTHS.indexOf(p[0]);
+  var yr=parseInt(p[1]);
+  if(mi<0||isNaN(yr)) return -1;
+  return yr*12+mi;
+}
 // Detects the current active session from existing summer/annual records
 function getCurrentSession() {
   var sessions={};
@@ -1017,23 +1031,40 @@ function getStudentDues(sid, monthKey, opts) {
   var includeAnnual = opts.includeAnnual!==false; // default true
   var annualAmount = opts.annualAmount || 2000;
 
-  // Fee + arrears — student.arr (live) is the SINGLE SOURCE OF TRUTH for arrears.
-  // feeDue = current monthly fee + live arrears (minus what's paid toward this month).
-  var fee = s.free ? 0 : parseFloat(s.fee||0);
-  var liveArr = s.free ? 0 : parseFloat(s.arr||0);
-  var arrears = liveArr;
+  // === LEDGER MODEL (calculated arrears — nothing stored, nothing drifts) ===
+  // Outstanding = openingBalance + (monthly fee x months billed) - (payments + concessions)
+  var monthlyFee = s.free ? 0 : parseFloat(s.fee||0);
+  var fee = monthlyFee;
+  var arrears = 0;
   var feeDue = 0;
   if(!s.free){
-    var rec = DB.fees.find(function(f){return f.sid===sid && f.key===monthKey;});
-    if(!rec){
-      // No payment recorded this month: owe full monthly fee + live arrears
-      feeDue = fee + liveArr;
+    if(s.billingStart && s.openingBalance!==undefined && MIDX(s.billingStart)>=0 && MIDX(monthKey)>=0){
+      // NEW LEDGER CALC
+      var startIdx = MIDX(s.billingStart), curIdx = MIDX(monthKey);
+      var monthsBilled = Math.max(0, curIdx - startIdx + 1);
+      var charged = parseFloat(s.openingBalance||0) + monthlyFee*monthsBilled;
+      var paidSum = 0;
+      DB.fees.forEach(function(f){
+        if(f.sid!==sid || f.opening) return;
+        var ki = MIDX(f.key);
+        if(ki>=startIdx && ki<=curIdx) paidSum += parseFloat(f.paid||0) + parseFloat(f.concession||0);
+      });
+      feeDue = Math.max(0, charged - paidSum);
+      // Display breakdown: fee line + arrears line always sum to feeDue
+      fee = Math.min(monthlyFee, feeDue);
+      arrears = feeDue - fee;
     } else {
-      // A payment record exists for this month. Its balance is the remaining amount
-      // (this already reflects fee + arrears - paid). Trust the balance.
-      feeDue = rec.partial ? parseFloat(rec.balance||0) : 0;
-      // Present arrears consistently so fee + arrears = feeDue
-      arrears = Math.max(0, feeDue - fee);
+      // FALLBACK (student not yet migrated to ledger): old student.arr logic
+      var liveArr = parseFloat(s.arr||0);
+      var rec = DB.fees.find(function(f){return f.sid===sid && f.key===monthKey;});
+      if(!rec){
+        feeDue = monthlyFee + liveArr;
+        arrears = liveArr;
+      } else {
+        feeDue = rec.partial ? parseFloat(rec.balance||0) : 0;
+        fee = Math.min(monthlyFee, feeDue);
+        arrears = Math.max(0, feeDue - fee);
+      }
     }
   }
 
@@ -1171,7 +1202,9 @@ function addStudent() {
   var isFree=G('sfree').checked;
   if(!name||!father){showAlert('a-s','Fill required fields (*)',true);return;}
   if(!isFree&&!fee){showAlert('a-s','Enter monthly fee or mark as Free Student',true);return;}
-  var ns={id:uid(),name:name,father:father,cls:cls,fee:fee,arr:arr,phone:phone,date:date,roll:roll,reg:reg,free:isFree};
+  var nowD=new Date();
+  var ns={id:uid(),name:name,father:father,cls:cls,fee:fee,arr:arr,phone:phone,date:date,roll:roll,reg:reg,free:isFree,
+    openingBalance:isFree?0:(arr||0), billingStart:MONTHS[nowD.getMonth()]+'-'+nowD.getFullYear()};
   DB.students.push(ns); save(); syncToFB('students',ns);
   ['sn','sf','sfee','sph','srl','sreg'].forEach(function(id){G(id).value='';});
   G('sarr').value='0'; G('sfree').checked=false; G('sfee').disabled=false; G('sarr').disabled=false;
@@ -1744,16 +1777,19 @@ function confirmFamilyPay() {
     var childTotal=dd.feeDue+prevPaid;
     var arr=Math.max(0, childTotal-fee);
     var totalPaid=prevPaid+pay;
-    var bal=Math.max(0,childTotal-totalPaid);
-    var full=bal<=0;
+    var prevConc=ex?parseFloat(ex.concession||0):0;
     var rno=ex?ex.rno:'F-'+Date.now().toString().slice(-5)+Math.floor(Math.random()*1000);
     var payments=(ex&&ex.payments)?ex.payments.slice():[];
     payments.push({date:now, amount:pay});
     DB.fees=DB.fees.filter(function(f){return!(f.sid===s.id&&f.key===key);});
-    var feeRec={id:rno,sid:s.id,key:key,monthly:fee,arrears:arr,concession:0,total:childTotal,paid:totalPaid,balance:bal,partial:!full,date:now,rno:rno,payments:payments};
+    var feeRec={id:rno,sid:s.id,key:key,monthly:fee,arrears:arr,concession:prevConc,total:childTotal,paid:totalPaid,balance:0,partial:false,date:now,rno:rno,payments:payments};
     DB.fees.push(feeRec);
+    // LEDGER: recompute remaining from central calculation (record now included)
+    var newDue=getStudentDues(s.id,key,{includeSummer:false,includeAnnual:false}).feeDue;
+    feeRec.balance=newDue;
+    feeRec.partial=newDue>0;
     var sidx=DB.students.findIndex(function(x){return x.id===s.id;});
-    if(sidx!==-1){ DB.students[sidx].arr=bal; syncToFB('students',DB.students[sidx]); }
+    if(sidx!==-1){ DB.students[sidx].arr=newDue; syncToFB('students',DB.students[sidx]); }
     syncToFB('fees',feeRec);
   });
   // Leftover after fees (if any) for summer pack
@@ -1943,8 +1979,13 @@ function undoFeePayment(sid, key) {
     });
   });
   // Reset student arrears
+  // LEDGER: recompute remaining after deletion
   var sidx=DB.students.findIndex(function(x){return x.id===sid;});
-  if(sidx!==-1){ DB.students[sidx].arr=GA(sid); syncToFB('students',DB.students[sidx]); }
+  if(sidx!==-1){
+    var newDue=getStudentDues(sid,key,{includeSummer:false,includeAnnual:false}).feeDue;
+    DB.students[sidx].arr=newDue;
+    syncToFB('students',DB.students[sidx]);
+  }
   logActivity('Fee','UNDO fee payment: '+s.name+' | '+key,0);
   save();
   renderFees(); updateDash();
@@ -1959,7 +2000,7 @@ function renderFees() {
     var s=DB.students[i];
     if(s.free){rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.cls+'</td><td colspan="4"><span class="bx bg">FREE STUDENT</span></td><td>-</td></tr>';continue;}
     var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
-    var arr=GA(s.id),tot=parseFloat(s.fee)+arr;
+    var dd0=getStudentDues(s.id,key,{includeSummer:false,includeAnnual:false});var arr=dd0.arrears,tot=dd0.feeDue;
     var badge,action;
     if(!rec){badge='<span class="bx bd">Unpaid</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPM(this.dataset.id,this.dataset.key)">Collect</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showFeeNote(this.dataset.id,this.dataset.key)">Note</button></div>';}
     else if(rec.partial){badge='<span class="bx borg">Partial</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bg2 sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPM(this.dataset.id,this.dataset.key)">Add More</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showFeeNote(this.dataset.id,this.dataset.key)">Note</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showFeeRcpt(this.dataset.id,this.dataset.key)">Receipt</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoFeePayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
@@ -1970,7 +2011,7 @@ function renderFees() {
 }
 function openPM(sid,key) {
   var s=DB.students.find(function(x){return x.id===sid;});
-  var arr=GA(s.id), fee=parseFloat(s.fee);
+  var dd=getStudentDues(sid,key,{includeSummer:false,includeAnnual:false});
   var ex=DB.fees.find(function(f){return f.sid===sid&&f.key===key;});
   var isAddMore=ex&&ex.partial;
   _pid=sid; _pkey=key;
@@ -1978,45 +2019,30 @@ function openPM(sid,key) {
   if(isAddMore){
     var paid=parseFloat(ex.paid||0);
     info+=' | Already Paid: <strong>'+fmt(paid)+'</strong>';
-    G('pm-info').innerHTML=info;
-    G('pm-fee').textContent=fmt(fee);
-    G('pm-arr').textContent=fmt(arr);
     G('pm-conc-show').textContent='—';
-    G('pm-tot').textContent=fmt(arr);
   } else {
-    G('pm-info').innerHTML=info;
-    G('pm-fee').textContent=fmt(fee);
-    G('pm-arr').textContent=arr>0?fmt(arr):'None';
     G('pm-conc-show').textContent='Rs. 0';
-    G('pm-tot').textContent=fmt(fee+arr);
   }
+  G('pm-info').innerHTML=info;
+  G('pm-fee').textContent=fmt(dd.fee);
+  G('pm-arr').textContent=dd.arrears>0?fmt(dd.arrears):'None';
+  G('pm-tot').textContent=fmt(dd.feeDue);
   G('pm-amt').value=''; G('pm-conc').value='0'; G('pm-res').style.display='none';
   OM('ov-pm');
 }
 
 
 function pmUpdate() {
-  var s=DB.students.find(function(x){return x.id===_pid;});
-  var arr=GA(s.id), fee=parseFloat(s.fee);
-  var ex=DB.fees.find(function(f){return f.sid===_pid&&f.key===_pkey;});
-  var isAddMore=ex&&ex.partial;
+  var dd=getStudentDues(_pid,_pkey,{includeSummer:false,includeAnnual:false});
   var rec=GN('pm-amt');
-  if(isAddMore){
-    var bal=arr-rec;
-    G('pm-tot').textContent=fmt(arr);
-    G('pm-rec').textContent=fmt(rec);
-    G('pm-bal').textContent=bal>0?fmt(bal)+' (arrears next month)':'Arrears Cleared!';
-    G('pm-bal').style.color=bal>0?'var(--red)':'var(--green-l)';
-  } else {
-    var conc=GN('pm-conc')||0;
-    var tot=fee+arr-conc;
-    var bal=tot-rec;
-    G('pm-conc-show').textContent=conc>0?('-'+fmt(conc)):'Rs. 0';
-    G('pm-tot').textContent=fmt(tot);
-    G('pm-rec').textContent=fmt(rec);
-    G('pm-bal').textContent=bal>0?fmt(bal)+' (arrears next month)':'All Cleared!';
-    G('pm-bal').style.color=bal>0?'var(--red)':'var(--green-l)';
-  }
+  var conc=GN('pm-conc')||0;
+  var tot=Math.max(0,dd.feeDue-conc);
+  var bal=tot-rec;
+  G('pm-conc-show').textContent=conc>0?('-'+fmt(conc)):'Rs. 0';
+  G('pm-tot').textContent=fmt(tot);
+  G('pm-rec').textContent=fmt(rec);
+  G('pm-bal').textContent=bal>0?fmt(bal)+' (arrears next month)':'All Cleared!';
+  G('pm-bal').style.color=bal>0?'var(--red)':'var(--green-l)';
   G('pm-res').style.display='block';
 }
 
@@ -2042,8 +2068,6 @@ function confirmFee() {
     if(!confirm('Amount ('+fmt(totalPaid)+') exceeds total due ('+fmt(tot)+'). Are you sure?')) return;
   }
 
-  var bal=Math.max(0,tot-totalPaid);
-  var full=bal<=0;
   var rno=ex?ex.rno:'F-'+Date.now().toString().slice(-5);
   var now=new Date().toISOString();
 
@@ -2051,15 +2075,24 @@ function confirmFee() {
   var payments=(ex&&ex.payments)?ex.payments.slice():[];
   payments.push({date:now, amount:rec});
 
+  // Concession accumulates (don't lose previous concession on the record)
+  var totalConc=(ex?parseFloat(ex.concession||0):0)+conc;
+
   DB.fees=DB.fees.filter(function(f){return!(f.sid===_pid&&f.key===_pkey);});
 
-  var feeRec={id:rno,sid:_pid,key:_pkey,monthly:fee,arrears:arr,concession:conc,
-    total:tot,paid:totalPaid,balance:bal,partial:!full,
+  var feeRec={id:rno,sid:_pid,key:_pkey,monthly:fee,arrears:arr,concession:totalConc,
+    total:tot,paid:totalPaid,balance:0,partial:false,
     date:now,rno:rno,payments:payments};
   DB.fees.push(feeRec);
 
+  // LEDGER: recompute remaining from the central calculation (record now included)
+  var newDue=getStudentDues(_pid,_pkey,{includeSummer:false,includeAnnual:false}).feeDue;
+  feeRec.balance=newDue;
+  feeRec.partial=newDue>0;
+  var full=newDue<=0;
+
   var sidx=DB.students.findIndex(function(x){return x.id===_pid;});
-  if(sidx!==-1) DB.students[sidx].arr=bal;
+  if(sidx!==-1) DB.students[sidx].arr=newDue;
 
   if(conc>0) logActivity('Fee','Fee: '+s.name+' | Concession: '+fmt(conc)+' | '+_pkey,rec);
   else logActivity('Fee','Fee: '+s.name+' | '+_pkey,rec);
@@ -2850,9 +2883,10 @@ function updateDash() {
   if(!pending.length){pl.innerHTML='<div class="empty">All fees collected this month!</div>';return;}
   var rows='<div class="tw"><table><thead><tr><th>Student</th><th>Class</th><th>Fee</th><th>Arrears</th><th>Total</th><th>Status</th></tr></thead><tbody>';
   for(var i=0;i<pending.length;i++){
-    var s=pending[i],arr=GA(s.id);
+    var s=pending[i];
+    var pdd=getStudentDues(s.id,mk,{includeSummer:false,includeAnnual:false});
     var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===mk;});
-    rows+='<tr><td>'+s.name+'</td><td>'+s.cls+'</td><td>'+fmt(s.fee)+'</td><td style="color:var(--red)">'+fmt(arr)+'</td><td style="color:var(--red);font-weight:700">'+fmt(parseFloat(s.fee)+arr)+'</td><td>'+(!rec?'Unpaid':'Partial')+'</td></tr>';
+    rows+='<tr><td>'+s.name+'</td><td>'+s.cls+'</td><td>'+fmt(pdd.fee)+'</td><td style="color:var(--red)">'+fmt(pdd.arrears)+'</td><td style="color:var(--red);font-weight:700">'+fmt(pdd.feeDue)+'</td><td>'+(!rec?'Unpaid':'Partial')+'</td></tr>';
   }
   pl.innerHTML=rows+'</tbody></table></div>';
 }
@@ -2996,18 +3030,13 @@ function generateVouchers() {
   var pages='';
   for(var i=0;i<list.length;i++){
     var s=list[i];
-    var arr=parseFloat(s.arr||0),fee=parseFloat(s.fee||0);
-    var summerAmt=0;
-    if(incSummer){
-      var spr=(DB.summer||[]).find(function(x){return x.sid===s.id;});
-      if(!spr){ // only add if not already paid
-        if(s.cls==='PG'||s.cls==='Nursery'||s.cls==='Prep') summerAmt=1000;
-        else if(s.cls==='Six') summerAmt=1500;
-        else summerAmt=1200;
-      }
-    }
-    var total=arr+fee+exam+other+summerAmt;
-    var totalLate=(fee===0&&total===0)?0:total+late;
+    // Use central calculation (single source of truth)
+    var vkey=mo+'-'+yr;
+    var dd=getStudentDues(s.id,vkey,{includeSummer:incSummer,includeAnnual:false});
+    var fee=dd.fee, arr=dd.arrears, summerAmt=dd.summer;
+    // For voucher display: Tuition Fee line + Arrears line should sum to feeDue
+    var total=dd.feeDue+summerAmt+exam+other;
+    var totalLate=(fee===0&&dd.feeDue===0&&summerAmt===0)?0:total+late;
     pages+='<div class="vpage" style="display:flex;gap:0;page-break-after:always;margin-bottom:16px">';
     for(var j=0;j<3;j++){
       var cl=copyLabels[j];
@@ -3139,6 +3168,42 @@ function clearActivityLog() {
 }
 
 /* ---- BACKUP ---- */
+function migrateToLedger() {
+  if(viewerBlock()) return;
+  var now=new Date();
+  var curKey=MONTHS[now.getMonth()]+'-'+now.getFullYear();
+  var nm=now.getMonth()+1, ny=now.getFullYear();
+  if(nm>11){nm=0;ny++;}
+  var nextKey=MONTHS[nm]+'-'+ny;
+  var pending=DB.students.filter(function(s){return !s.billingStart;});
+  if(!pending.length){alert('All students are already on the ledger system!');return;}
+  if(!confirm('Upgrade '+pending.length+' student(s) to the Ledger System?\n\nThis locks in each student\'s CURRENT dues as their verified opening balance. From then on, all dues are calculated automatically from payment history — no more inconsistencies.\n\nMake sure current dues are correct before continuing (check Defaulters page).\n\nContinue?')) return;
+  var count=0;
+  pending.forEach(function(s){
+    var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===curKey&&!f.opening;});
+    if(s.free){
+      s.openingBalance=0;
+      s.billingStart=curKey;
+    } else if(rec){
+      // Paid (or partially paid) this month: anchor at the record's remaining balance, bill from NEXT month
+      s.openingBalance=rec.partial?parseFloat(rec.balance||0):0;
+      s.billingStart=nextKey;
+    } else {
+      // Not paid this month: anchor at stored arrears, current month billed by formula
+      s.openingBalance=parseFloat(s.arr||0);
+      s.billingStart=curKey;
+    }
+    // Refresh the cached arr to the ledger-computed outstanding
+    s.arr=getStudentDues(s.id,curKey,{includeSummer:false,includeAnnual:false}).feeDue;
+    syncToFB('students',s);
+    count++;
+  });
+  save();
+  logActivity('System','Migrated '+count+' students to Ledger System',0);
+  alert('Done! '+count+' student(s) upgraded to the Ledger System.\n\nDues are now calculated automatically from payment history. Verify the Defaulters page shows correct amounts.');
+  updateDash();
+}
+
 function cleanupDuplicateFees() {
   if(viewerBlock()) return;
   if(!confirm('This will remove duplicate fee records (same student + same month), keeping the one with the most payment progress. Continue?')) return;
