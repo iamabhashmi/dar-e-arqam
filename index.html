@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260611043539 -->
+<!-- v20260611050010 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,8 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
+
 
 
 
@@ -151,6 +153,8 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
+
 
 
 
@@ -1767,7 +1771,7 @@ function confirmFamilyPay() {
       // Only record summer as paid if fully covered (else leave as due)
       if(pay>=sa){
         var rno='SP-'+Date.now().toString().slice(-5)+Math.floor(Math.random()*100);
-        var sumRec={id:rno,rno:rno,sid:s.id,yr:'2025-26',amount:sa,date:now};
+        var sumRec={id:rno,rno:rno,sid:s.id,yr:getCurrentSession(),amount:sa,date:now};
         DB.summer.push(sumRec); syncToFB('summer',sumRec);
       } else {
         remaining+=pay; // give back partial summer (can't partially pay summer)
@@ -2451,17 +2455,19 @@ function renderDefaulters() {
   var tb=G('dftb');
   if(!fl.length){tb.innerHTML='<tr><td colspan="8"><div class="empty">No defaulters!</div></td></tr>';G('dfsc').style.display='none';return;}
   var total=0;
-  for(var i=0;i<fl.length;i++) total+=parseFloat(fl[i].fee)+GA(fl[i].id);
+  for(var i=0;i<fl.length;i++){ var dd=getStudentDues(fl[i].id,key,{includeSummer:false,includeAnnual:false}); total+=dd.feeDue; }
   G('dfsc').style.display='block';
   G('dfsum').innerHTML='Defaulters: <strong>'+fl.length+'</strong> &nbsp;|&nbsp; Total Outstanding: <strong style="color:var(--red)">'+fmt(total)+'</strong>';
   var rows='';
   for(var i=0;i<fl.length;i++){
-    var s=fl[i],arr=GA(s.id);
+    var s=fl[i];
+    var dd=getStudentDues(s.id,key,{includeSummer:false,includeAnnual:false});
+    var arr=dd.arrears;
     var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
     var st=!rec?'<span class="bx bd">Unpaid</span>':'<span class="bx borg">Partial</span>';
-    var totalDue=parseFloat(s.fee)+arr;
+    var totalDue=dd.feeDue;
     var waBtn=s.phone?'<button class="btn bp sm" style="background:#25D366;border-color:#25D366" data-id="'+s.id+'" data-mo="'+mo+'" onclick="sendWhatsApp(this.dataset.id,this.dataset.mo)">WhatsApp</button>':'<span style="color:var(--ink-m);font-size:11px">No phone</span>';
-    rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.cls+'</td><td>'+(s.phone||'-')+'</td><td>'+fmt(s.fee)+'</td><td style="color:var(--red)">'+fmt(arr)+'</td><td style="color:var(--red);font-weight:700">'+fmt(totalDue)+'</td><td>'+st+'</td><td>'+waBtn+'</td></tr>';
+    rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.cls+'</td><td>'+(s.phone||'-')+'</td><td>'+fmt(dd.fee)+'</td><td style="color:var(--red)">'+fmt(arr)+'</td><td style="color:var(--red);font-weight:700">'+fmt(totalDue)+'</td><td>'+st+'</td><td>'+waBtn+'</td></tr>';
   }
   tb.innerHTML=rows;
 }
