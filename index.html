@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260611035458 -->
+<!-- v20260611041648 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -149,6 +150,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -1694,27 +1696,52 @@ function confirmFamilyPay() {
   if(receiving>totalDue){
     if(!confirm('Amount ('+fmt(receiving)+') exceeds due ('+fmt(totalDue)+'). Continue?')) return;
   }
-  var remaining=receiving;
   var now=new Date().toISOString();
-  // Distribute payment: each child's FEE first (in order), then summer pack
+  // Collect children who owe fees + how much each owes
+  var feeChildren=[];
   fam.children.forEach(function(s){
     if(s.free) return;
+    var dd=getStudentDues(s.id,key,{includeSummer:false,includeAnnual:false});
+    if(dd.feeDue>0) feeChildren.push({s:s, owe:dd.feeDue});
+  });
+  // Distribute EQUALLY across children. If a child owes less than their share,
+  // the leftover redistributes to the others.
+  var remaining=receiving;
+  var pool=feeChildren.slice();
+  var alloc={}; // sid -> amount allocated
+  while(remaining>0 && pool.length>0){
+    var share=remaining/pool.length;
+    var nextPool=[];
+    var distributedThisRound=0;
+    pool.forEach(function(c){
+      var already=alloc[c.s.id]||0;
+      var canTake=c.owe-already;
+      var give=Math.min(share, canTake);
+      alloc[c.s.id]=already+give;
+      distributedThisRound+=give;
+      // If this child still has room after taking full share, keep in pool
+      if((alloc[c.s.id]) < c.owe - 0.01) nextPool.push(c);
+    });
+    remaining-=distributedThisRound;
+    // Avoid infinite loop: if nothing was distributed, stop
+    if(distributedThisRound<0.01) break;
+    pool=nextPool;
+  }
+  // Now record each child's payment based on allocation
+  feeChildren.forEach(function(c){
+    var s=c.s;
+    var pay=alloc[s.id]||0;
+    if(pay<=0) return;
     var fee=parseFloat(s.fee);
     var ex=DB.fees.find(function(f){return f.sid===s.id&&f.key===key;});
     var prevPaid=ex?parseFloat(ex.paid||0):0;
-    // Use central calc for consistency
     var dd=getStudentDues(s.id,key,{includeSummer:false,includeAnnual:false});
-    var childRemaining=dd.feeDue;
     var childTotal=dd.feeDue+prevPaid;
-    if(childRemaining<=0) return;
     var arr=Math.max(0, childTotal-fee);
-    var pay=Math.min(remaining, childRemaining);
-    if(pay<=0) return;
-    remaining-=pay;
     var totalPaid=prevPaid+pay;
     var bal=Math.max(0,childTotal-totalPaid);
     var full=bal<=0;
-    var rno=ex?ex.rno:'F-'+Date.now().toString().slice(-5)+Math.floor(Math.random()*100);
+    var rno=ex?ex.rno:'F-'+Date.now().toString().slice(-5)+Math.floor(Math.random()*1000);
     var payments=(ex&&ex.payments)?ex.payments.slice():[];
     payments.push({date:now, amount:pay});
     DB.fees=DB.fees.filter(function(f){return!(f.sid===s.id&&f.key===key);});
@@ -1724,6 +1751,8 @@ function confirmFamilyPay() {
     if(sidx!==-1){ DB.students[sidx].arr=bal; syncToFB('students',DB.students[sidx]); }
     syncToFB('fees',feeRec);
   });
+  // Leftover after fees (if any) for summer pack
+  remaining=Math.max(0,remaining);
   // Then summer pack if enabled and money remains
   if(incSummer && remaining>0){
     fam.children.forEach(function(s){
