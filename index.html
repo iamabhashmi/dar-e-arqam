@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260611143231 -->
+<!-- v20260612045114 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -155,6 +156,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -756,7 +758,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
   <div class="card">
     <div class="ct">Maintenance</div>
     <p style="font-size:12px;color:var(--ink-s);margin-bottom:10px"><strong>Ledger System:</strong> Locks in each student's current verified dues, then calculates all future dues automatically from payment history — no stored arrears, no inconsistencies. One-time upgrade.</p>
-    <button class="btn bp" onclick="migrateToLedger()" style="margin-bottom:14px">Upgrade to Ledger System</button>
+    <button class="btn bp" onclick="migrateToLedger()" style="margin-bottom:14px">Calibrate Ledger System</button>
     <p style="font-size:12px;color:var(--ink-s);margin-bottom:10px">Remove duplicate fee records (same student + same month). Keeps the record with the most payment.</p>
     <button class="btn br" onclick="cleanupDuplicateFees()">Clean Duplicate Fee Records</button>
   </div>
@@ -1047,7 +1049,7 @@ function getStudentDues(sid, monthKey, opts) {
       DB.fees.forEach(function(f){
         if(f.sid!==sid || f.opening) return;
         var ki = MIDX(f.key);
-        if(ki>=startIdx && ki<=curIdx) paidSum += parseFloat(f.paid||0) + parseFloat(f.concession||0);
+        if(ki>=0 && ki<=curIdx) paidSum += parseFloat(f.paid||0) + parseFloat(f.concession||0);
       });
       feeDue = Math.max(0, charged - paidSum);
       // Display breakdown: fee line + arrears line always sum to feeDue
@@ -1252,6 +1254,33 @@ function saveStudent() {
   if(!name||!father){showAlert('a-es','Fill required fields',true);return;}
   var idx=DB.students.findIndex(function(x){return x.id===id;}); if(idx===-1) return;
   DB.students[idx]=Object.assign({},DB.students[idx],{name:name,father:father,cls:cls,fee:fee,arr:arr,phone:phone,date:date,roll:roll,reg:reg,free:isFree});
+  // LEDGER RE-ANCHOR: if this student is on the ledger, the entered Arrears
+  // (= previous months owed, excluding this month's fee) becomes the new anchor.
+  var st=DB.students[idx];
+  if(st.billingStart && MIDX(st.billingStart)>=0){
+    var nowD=new Date();
+    var curKey2=MONTHS[nowD.getMonth()]+'-'+nowD.getFullYear();
+    var curIdx2=MIDX(curKey2);
+    var P2=0, paidThisMonth=0;
+    DB.fees.forEach(function(f){
+      if(f.sid!==st.id || f.opening) return;
+      var ki=MIDX(f.key);
+      if(ki>=0 && ki<=curIdx2){
+        P2 += parseFloat(f.paid||0)+parseFloat(f.concession||0);
+        if(f.key===curKey2) paidThisMonth += parseFloat(f.paid||0)+parseFloat(f.concession||0);
+      }
+    });
+    var fee2=st.free?0:parseFloat(st.fee||0);
+    var rec2=DB.fees.find(function(f){return f.sid===st.id&&f.key===curKey2&&!f.opening;});
+    var T2, start2;
+    if(st.free){ T2=0; start2=curKey2; }
+    else if(rec2 && !rec2.partial){ T2=parseFloat(arr||0); start2=(function(){var nm2=nowD.getMonth()+1,ny2=nowD.getFullYear();if(nm2>11){nm2=0;ny2++;}return MONTHS[nm2]+'-'+ny2;})(); }
+    else { T2=Math.max(0, parseFloat(arr||0)+fee2-paidThisMonth); start2=curKey2; }
+    var mb2=(start2===curKey2)?1:0;
+    st.openingBalance = T2 - fee2*mb2 + P2;
+    st.billingStart = start2;
+    st.arr = T2;
+  }
   save(); syncToFB('students',DB.students[idx]); CM('ov-es'); G('es-fee').disabled=false;
   logActivity('Student','Student updated: '+name+' | Class: '+cls);
   renderStudents(); updateDash();
@@ -3172,35 +3201,55 @@ function migrateToLedger() {
   if(viewerBlock()) return;
   var now=new Date();
   var curKey=MONTHS[now.getMonth()]+'-'+now.getFullYear();
+  var curIdx=MIDX(curKey);
   var nm=now.getMonth()+1, ny=now.getFullYear();
   if(nm>11){nm=0;ny++;}
   var nextKey=MONTHS[nm]+'-'+ny;
-  var pending=DB.students.filter(function(s){return !s.billingStart;});
-  if(!pending.length){alert('All students are already on the ledger system!');return;}
-  if(!confirm('Upgrade '+pending.length+' student(s) to the Ledger System?\n\nThis locks in each student\'s CURRENT dues as their verified opening balance. From then on, all dues are calculated automatically from payment history — no more inconsistencies.\n\nMake sure current dues are correct before continuing (check Defaulters page).\n\nContinue?')) return;
+  if(!confirm('Calibrate the Ledger System for ALL students?\n\nThis locks in each student\'s CURRENT dues as the verified anchor. All future dues are then calculated automatically from payment history.\n\nCheck the Defaulters page first — current dues should look correct.\n\nSafe to run again any time. Continue?')) return;
   var count=0;
-  pending.forEach(function(s){
+  DB.students.forEach(function(s){
+    var fee=s.free?0:parseFloat(s.fee||0);
+    // Total of ALL historical payments + concessions up to current month
+    var P=0;
+    DB.fees.forEach(function(f){
+      if(f.sid!==s.id || f.opening) return;
+      var ki=MIDX(f.key);
+      if(ki>=0 && ki<=curIdx) P += parseFloat(f.paid||0)+parseFloat(f.concession||0);
+    });
     var rec=DB.fees.find(function(f){return f.sid===s.id&&f.key===curKey&&!f.opening;});
+    // Determine T = the student's TRUE current outstanding
+    var T, start;
     if(s.free){
-      s.openingBalance=0;
-      s.billingStart=curKey;
+      T=0; start=curKey;
     } else if(rec){
-      // Paid (or partially paid) this month: anchor at the record's remaining balance, bill from NEXT month
-      s.openingBalance=rec.partial?parseFloat(rec.balance||0):0;
-      s.billingStart=nextKey;
+      T=rec.partial?parseFloat(rec.balance||0):0; start=nextKey;
+    } else if(s.billingStart && s.openingBalance!==undefined && MIDX(s.billingStart)>=0){
+      // Already on ledger, unpaid this month: derive T from their previous anchor
+      var oldStart=MIDX(s.billingStart);
+      var mbOld=Math.max(0, curIdx-oldStart+1);
+      var Pold=0;
+      DB.fees.forEach(function(f){
+        if(f.sid!==s.id || f.opening) return;
+        var ki=MIDX(f.key);
+        if(ki>=oldStart && ki<=curIdx) Pold += parseFloat(f.paid||0)+parseFloat(f.concession||0);
+      });
+      T=Math.max(0, parseFloat(s.openingBalance||0) + fee*mbOld - Pold);
+      start=curKey;
     } else {
-      // Not paid this month: anchor at stored arrears, current month billed by formula
-      s.openingBalance=parseFloat(s.arr||0);
-      s.billingStart=curKey;
+      // First-time migration, unpaid this month: arr (prev months) + this month's fee
+      T=parseFloat(s.arr||0)+fee; start=curKey;
     }
-    // Refresh the cached arr to the ledger-computed outstanding
-    s.arr=getStudentDues(s.id,curKey,{includeSummer:false,includeAnnual:false}).feeDue;
+    var mb=(start===curKey)?1:0;
+    // Anchor so that: T = ob + fee*mb - P  (with ALL history counted)
+    s.openingBalance = T - fee*mb + P;
+    s.billingStart = start;
+    s.arr = T; // cache = true outstanding
     syncToFB('students',s);
     count++;
   });
   save();
-  logActivity('System','Migrated '+count+' students to Ledger System',0);
-  alert('Done! '+count+' student(s) upgraded to the Ledger System.\n\nDues are now calculated automatically from payment history. Verify the Defaulters page shows correct amounts.');
+  logActivity('System','Ledger calibrated for '+count+' students',0);
+  alert('Done! Ledger calibrated for '+count+' student(s).\n\nVerify the Defaulters page. If any student\'s amount is wrong, open Edit Student and set the correct Arrears — the ledger will re-anchor to it.');
   updateDash();
 }
 
