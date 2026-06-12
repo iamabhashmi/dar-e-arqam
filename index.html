@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260612045114 -->
+<!-- v20260612051354 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -156,6 +157,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -3224,16 +3226,9 @@ function migrateToLedger() {
     } else if(rec){
       T=rec.partial?parseFloat(rec.balance||0):0; start=nextKey;
     } else if(s.billingStart && s.openingBalance!==undefined && MIDX(s.billingStart)>=0){
-      // Already on ledger, unpaid this month: derive T from their previous anchor
-      var oldStart=MIDX(s.billingStart);
-      var mbOld=Math.max(0, curIdx-oldStart+1);
-      var Pold=0;
-      DB.fees.forEach(function(f){
-        if(f.sid!==s.id || f.opening) return;
-        var ki=MIDX(f.key);
-        if(ki>=oldStart && ki<=curIdx) Pold += parseFloat(f.paid||0)+parseFloat(f.concession||0);
-      });
-      T=Math.max(0, parseFloat(s.openingBalance||0) + fee*mbOld - Pold);
+      // Already on ledger, unpaid this month: T = current ledger dues (IDEMPOTENT —
+      // re-running calibration never changes a correct number)
+      T=getStudentDues(s.id,curKey,{includeSummer:false,includeAnnual:false}).feeDue;
       start=curKey;
     } else {
       // First-time migration, unpaid this month: arr (prev months) + this month's fee
