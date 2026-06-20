@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260612051354 -->
+<!-- v20260620073223 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,9 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
+
+
 
 
 
@@ -157,6 +160,9 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
+
+
 
 
 
@@ -392,7 +398,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
     <label>Year:</label>
     <select id="salyr" onchange="renderSalary()"><option value="2024">2024</option><option value="2025">2025</option><option value="2026" selected>2026</option></select>
   </div>
-  <div class="card"><div class="ct">Salary Status</div><div class="tw"><table><thead><tr><th>#</th><th>Name</th><th>Designation</th><th>Salary</th><th>Arrears</th><th>Total Due</th><th>Status</th><th>Action</th></tr></thead><tbody id="saltb"></tbody></table></div></div>
+  <div class="card"><div class="ct" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><span>Salary Status</span><button class="btn bo sm" onclick="printAllSalHistory()">Print All Staff History</button></div><div class="tw"><table><thead><tr><th>#</th><th>Name</th><th>Designation</th><th>Salary</th><th>Arrears</th><th>Total Due</th><th>Status</th><th>Action</th></tr></thead><tbody id="saltb"></tbody></table></div></div>
 </div>
 
 <!-- EXPENSES -->
@@ -767,6 +773,15 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 </div>
 </div><!-- end main-content -->
 
+<!-- SALARY HISTORY MODAL -->
+<div class="ov" id="ov-salhist">
+  <div class="md" style="max-width:640px">
+    <button class="mx" onclick="CM('ov-salhist')">&times;</button>
+    <div class="mt">Salary Payment History</div>
+    <div id="salhist-body"></div>
+  </div>
+</div>
+
 <!-- FAMILY PAYMENT MODAL -->
 <div class="ov" id="ov-fampay">
   <div class="md">
@@ -1004,6 +1019,7 @@ function GSA(id) {
   return total;
 }
 
+
 // ===== CENTRAL DUES CALCULATION (single source of truth) =====
 // Month index helper: 'Jun-2026' -> absolute month number for arithmetic
 function MIDX(key){
@@ -1221,8 +1237,10 @@ function renderStudents() {
   var tb=G('stb');
   if(!fl.length){tb.innerHTML='<tr><td colspan="7"><div class="empty">No students found</div></td></tr>';return;}
   var rows='';
+  var _smk=MONTHS[new Date().getMonth()]+'-'+new Date().getFullYear();
   for(var i=0;i<fl.length;i++){
-    var s=fl[i],arr=GA(s.id);
+    var s=fl[i];
+    var arr=getStudentDues(s.id,_smk,{includeSummer:false,includeAnnual:false}).arrears;
     var fd=s.free?'<span class="bx bg">FREE</span>':fmt(s.fee);
     var ad=s.free?'-':(arr>0?'<span style="color:var(--red)">'+fmt(arr)+'</span>':'Clear');
     rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong><br><small style="color:var(--ink-m)">'+s.father+(s.roll?' | Roll:'+s.roll:'')+'</small></td><td><span class="bx bo2">'+s.cls+'</span></td><td>'+fd+'</td><td>'+ad+'</td><td>'+(s.phone||'-')+'</td><td style="display:flex;gap:4px"><button class="btn bo sm" data-id="'+s.id+'" onclick="openES(this.dataset.id)">Edit</button><button class="btn br sm" data-id="'+s.id+'" onclick="delStudent(this.dataset.id)">Del</button></td></tr>';
@@ -1241,7 +1259,9 @@ function delStudent(id) {
 function openES(id) {
   var s=DB.students.find(function(x){return x.id===id;}); if(!s) return;
   G('es-id').value=s.id; G('es-n').value=s.name; G('es-f').value=s.father;
-  G('es-c').value=s.cls; G('es-fee').value=s.fee; G('es-arr').value=s.arr||0;
+  G('es-c').value=s.cls; G('es-fee').value=s.fee;
+  var _emk=MONTHS[new Date().getMonth()]+'-'+new Date().getFullYear();
+  G('es-arr').value=getStudentDues(s.id,_emk,{includeSummer:false,includeAnnual:false}).arrears;
   G('es-ph').value=s.phone||''; G('es-dt').value=s.date||''; G('es-rl').value=s.roll||'';
   G('es-reg').value=s.reg||''; G('es-free').checked=s.free||false;
   G('es-fee').disabled=s.free||false; OM('ov-es');
@@ -2361,8 +2381,6 @@ function saveStaff() {
   save(); syncToFB('staff',DB.staff[idx]); CM('ov-est'); renderStaff(); updateDash();
 }
 
-/* ---- SALARY ---- */
-var _psid=null,_pskey=null;
 function renderSalary() {
   var mo=GV('salmo'),yr=GV('salyr'),key=mo+'-'+yr,tb=G('saltb');
   if(!DB.staff.length){tb.innerHTML='<tr><td colspan="8"><div class="empty">Add staff first</div></td></tr>';return;}
@@ -2373,10 +2391,11 @@ function renderSalary() {
     var salArr=GSA(s.id);
     if(rec&&rec.partial) salArr=salArr-parseFloat(rec.balance||0);
     var totalDue=parseFloat(s.salary)+salArr;
+    if(rec&&rec.partial) totalDue=parseFloat(rec.balance||0);
     var badge,action;
-    if(!rec){badge='<span class="bx bd">Pending</span>';action='<button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Pay</button>';}
-    else if(rec.partial){badge='<span class="bx borg">Partial</span>';action='<div style="display:flex;gap:4px"><button class="btn bg2 sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Add More</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showSalSlip(this.dataset.id,this.dataset.key)">Slip</button></div>';}
-    else{badge='<span class="bx bg">Paid</span>';action='<button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showSalSlip(this.dataset.id,this.dataset.key)">Slip</button>';}
+    if(!rec){badge='<span class="bx bd">Pending</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Pay</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button></div>';}
+    else if(rec.partial){badge='<span class="bx borg">Partial</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bg2 sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Add More</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showSalSlip(this.dataset.id,this.dataset.key)">Slip</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoSalPayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
+    else{badge='<span class="bx bg">Paid</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showSalSlip(this.dataset.id,this.dataset.key)">Slip</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoSalPayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
     var ac=salArr>0?'color:var(--red)':'color:var(--ink-m)';
     var tc=salArr>0?'color:var(--red);font-weight:600':'font-weight:600';
     rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.role+'</td><td>'+fmt(s.salary)+'</td><td style="'+ac+'">'+(salArr>0?fmt(salArr):'—')+'</td><td style="'+tc+'">'+fmt(totalDue)+'</td><td>'+badge+'</td><td>'+action+'</td></tr>';
@@ -2386,67 +2405,243 @@ function renderSalary() {
 function openPS(sid,key) {
   var s=DB.staff.find(function(x){return x.id===sid;});
   var ex=DB.salaries.find(function(r){return r.sid===sid&&r.key===key;});
-  var alreadyPaid=ex?parseFloat(ex.paid||0):0;
-  // Total arrears from GSA (partial balances + opening arrears)
-  var prevArr=GSA(sid);
-  // If this month already has a partial record, its balance is part of GSA — subtract to avoid double
-  if(ex&&ex.partial) prevArr-=parseFloat(ex.balance||0);
-  var totalDue=parseFloat(s.salary)+prevArr-alreadyPaid;
   _psid=sid;_pskey=key;
+  var alreadyPaid=ex?parseFloat(ex.paid||0):0;
+  var remaining, salComp, arrComp;
+  if(ex&&ex.partial){
+    // Already a partial payment this month: remaining is simply the record balance
+    remaining=parseFloat(ex.balance||0);
+    salComp=parseFloat(ex.amount||s.salary);
+    arrComp=parseFloat(ex.arrears||0);
+  } else {
+    // No payment yet: total = this month's salary + all prior arrears
+    arrComp=GSA(sid);
+    salComp=parseFloat(s.salary);
+    remaining=salComp+arrComp;
+  }
   G('ps-info').innerHTML='<strong>'+s.name+'</strong> | '+s.role+(alreadyPaid>0?' | Already Paid: <strong>'+fmt(alreadyPaid)+'</strong>':'');
-  G('ps-sal').textContent=fmt(s.salary)+(prevArr>0?' + Arrears: '+fmt(prevArr):'');
-  G('ps-due').textContent=fmt(Math.max(0,totalDue));
+  G('ps-sal').textContent=fmt(salComp)+(arrComp>0?' + Arrears: '+fmt(arrComp):'');
+  G('ps-due').textContent=fmt(Math.max(0,remaining));
   G('ps-amt').value=''; G('ps-res').style.display='none'; OM('ov-ps');
 }
 
 function psUpdate() {
   var s=DB.staff.find(function(x){return x.id===_psid;});
   var ex=DB.salaries.find(function(r){return r.sid===_psid&&r.key===_pskey;});
-  var alreadyPaid=ex?parseFloat(ex.paid||0):0;
-  var prevArr=GSA(_psid);
-  if(ex&&ex.partial) prevArr-=parseFloat(ex.balance||0);
-  var totalDue=parseFloat(s.salary)+prevArr,rem=totalDue-alreadyPaid;
-  var rec=GN('ps-amt'),bal=rem-rec;
-  G('ps-rec').textContent=fmt(rec); G('ps-bal').textContent=bal>0?fmt(bal):'Fully Paid';
-  G('ps-bal').style.color=bal>0?'var(--red)':'var(--green-l)'; G('ps-res').style.display='block';
+  var remaining;
+  if(ex&&ex.partial){
+    remaining=parseFloat(ex.balance||0);
+  } else {
+    remaining=parseFloat(s.salary)+GSA(_psid);
+  }
+  var rec=GN('ps-amt'),bal=remaining-rec;
+  G('ps-rec').textContent=fmt(rec);
+  G('ps-bal').textContent=bal>0?fmt(bal):'Fully Paid';
+  G('ps-bal').style.color=bal>0?'var(--red)':'var(--green-l)';
+  G('ps-res').style.display='block';
+}
+
+function showSalHistory(sid) {
+  var s=DB.staff.find(function(x){return x.id===sid;});
+  if(!s) return;
+  var recs=DB.salaries.filter(function(r){return r.sid===sid;});
+  // Sort by month
+  recs.sort(function(a,b){ return MIDX(a.key)-MIDX(b.key); });
+  var html='<div style="max-width:600px">';
+  html+='<div style="font-size:18px;font-weight:700;color:var(--blue);margin-bottom:4px">'+s.name+'</div>';
+  html+='<div style="font-size:13px;color:var(--ink-m);margin-bottom:14px">'+s.role+' | Monthly Salary: '+fmt(s.salary)+'</div>';
+  var grandPaid=0;
+  if(!recs.length){
+    html+='<div class="empty">No salary payments recorded yet</div>';
+  } else {
+    recs.forEach(function(r){
+      var parts=r.key.split('-');
+      var monthName=(MNAME[parts[0]]||parts[0])+' '+parts[1];
+      html+='<div style="border:1px solid var(--bdr);border-radius:8px;padding:10px;margin-bottom:10px">';
+      html+='<div style="display:flex;justify-content:space-between;font-weight:700;margin-bottom:6px"><span>'+monthName+'</span><span style="font-size:12px;color:var(--ink-m)">Total: '+fmt(r.total_due||r.amount)+'</span></div>';
+      // Installments with running balance
+      var payments=r.payments||[];
+      if(payments.length){
+        var totalOwed=parseFloat(r.total_due||r.amount||s.salary);
+        var running=totalOwed;
+        html+='<table style="width:100%;border-collapse:collapse;font-size:12px"><thead><tr style="color:var(--ink-m);text-align:left"><th style="padding:3px 0">Date</th><th style="text-align:right">Paid</th><th style="text-align:right">Left</th></tr></thead><tbody>';
+        payments.forEach(function(p){
+          running-=parseFloat(p.amount||0);
+          grandPaid+=parseFloat(p.amount||0);
+          var dt=new Date(p.date).toLocaleDateString('en-PK');
+          html+='<tr><td style="padding:3px 0">'+dt+'</td><td style="text-align:right;color:var(--green-l);font-weight:600">'+fmt(p.amount)+'</td><td style="text-align:right;color:'+(running>0?'var(--red)':'var(--green-l)')+'">'+fmt(Math.max(0,running))+'</td></tr>';
+        });
+        html+='</tbody></table>';
+      } else {
+        html+='<div style="font-size:12px;color:var(--ink-m)">Paid '+fmt(r.paid||r.amount)+'</div>';
+        grandPaid+=parseFloat(r.paid||r.amount||0);
+      }
+      var st=r.partial?'<span class="bx borg">Partial - '+fmt(r.balance)+' left</span>':'<span class="bx bg">Fully Paid</span>';
+      html+='<div style="margin-top:6px">'+st+'</div>';
+      html+='</div>';
+    });
+    html+='<div style="border-top:2px solid var(--blue);padding-top:8px;display:flex;justify-content:space-between;font-weight:700;font-size:15px"><span>Total Paid (All Time)</span><span style="color:var(--green-l)">'+fmt(grandPaid)+'</span></div>';
+  }
+  html+='</div>';
+  html+='<div style="margin-top:14px;display:flex;gap:8px"><button class="btn bp" onclick="printSalHistory(\''+sid+'\')">Print This Teacher</button><button class="btn bo" onclick="CM(\'ov-salhist\')">Close</button></div>';
+  G('salhist-body').innerHTML=html;
+  OM('ov-salhist');
+}
+
+function printSalHistory(sid) {
+  var s=DB.staff.find(function(x){return x.id===sid;});
+  if(!s) return;
+  var recs=DB.salaries.filter(function(r){return r.sid===sid;});
+  recs.sort(function(a,b){ return MIDX(a.key)-MIDX(b.key); });
+  var win=window.open('','_blank');
+  win.document.write('<!DOCTYPE html><html><head><title>Salary History - '+s.name+'</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;padding:22px;font-size:13px}h2,h3{text-align:center}table{width:100%;border-collapse:collapse;margin:8px 0}th{background:#1a3a6b;color:#fff;padding:6px;text-align:left;font-size:11px}td{padding:5px 6px;border-bottom:1px solid #ddd;font-size:11px}.mh{font-weight:700;margin:12px 0 4px;color:#1a3a6b}</style></head><body>');
+  win.document.write('<h2>DAR-E-ARQAM SCHOOL</h2><h3>Haveli Lakha Campus</h3><h3>Salary Payment History</h3>');
+  win.document.write('<p style="margin:10px 0"><strong>Teacher:</strong> '+s.name+' &nbsp; | &nbsp; <strong>Designation:</strong> '+s.role+' &nbsp; | &nbsp; <strong>Monthly Salary:</strong> '+fmt(s.salary)+'</p>');
+  var grandPaid=0;
+  recs.forEach(function(r){
+    var parts=r.key.split('-');
+    win.document.write('<div class="mh">'+(MNAME[parts[0]]||parts[0])+' '+parts[1]+' (Total Due: '+fmt(r.total_due||r.amount)+')</div>');
+    win.document.write('<table><thead><tr><th>Date</th><th style="text-align:right">Paid</th><th style="text-align:right">Balance Left</th></tr></thead><tbody>');
+    var totalOwed=parseFloat(r.total_due||r.amount||s.salary), running=totalOwed;
+    (r.payments||[]).forEach(function(p){
+      running-=parseFloat(p.amount||0); grandPaid+=parseFloat(p.amount||0);
+      win.document.write('<tr><td>'+new Date(p.date).toLocaleDateString('en-PK')+'</td><td style="text-align:right">'+fmt(p.amount)+'</td><td style="text-align:right">'+fmt(Math.max(0,running))+'</td></tr>');
+    });
+    win.document.write('</tbody></table>');
+    win.document.write('<p style="font-size:11px;color:#555">Status: '+(r.partial?('Partial — '+fmt(r.balance)+' remaining'):'Fully Paid')+'</p>');
+  });
+  win.document.write('<p style="margin-top:14px;font-weight:700;font-size:14px;text-align:right">Total Paid (All Time): '+fmt(grandPaid)+'</p>');
+  win.document.write('</body></html>');
+  win.document.close(); setTimeout(function(){win.print();},500);
+}
+
+function printAllSalHistory() {
+  var win=window.open('','_blank');
+  win.document.write('<!DOCTYPE html><html><head><title>All Staff Salary History</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;padding:22px;font-size:12px}h2,h3{text-align:center}table{width:100%;border-collapse:collapse;margin:6px 0 14px}th{background:#1a3a6b;color:#fff;padding:6px;text-align:left;font-size:11px}td{padding:5px 6px;border-bottom:1px solid #ddd;font-size:11px}.sh{font-size:15px;font-weight:700;color:#1a3a6b;margin:16px 0 4px;border-bottom:2px solid #c8972a;padding-bottom:3px}.mh{font-weight:700;margin:8px 0 2px;color:#444;font-size:12px}</style></head><body>');
+  win.document.write('<h2>DAR-E-ARQAM SCHOOL</h2><h3>Haveli Lakha Campus</h3><h3>All Staff — Salary Payment History</h3>');
+  DB.staff.forEach(function(s){
+    var recs=DB.salaries.filter(function(r){return r.sid===s.id;});
+    recs.sort(function(a,b){ return MIDX(a.key)-MIDX(b.key); });
+    win.document.write('<div class="sh">'+s.name+' — '+s.role+' (Salary: '+fmt(s.salary)+')</div>');
+    if(!recs.length){ win.document.write('<p style="color:#888;font-size:11px">No payments recorded</p>'); return; }
+    var grandPaid=0;
+    recs.forEach(function(r){
+      var parts=r.key.split('-');
+      win.document.write('<div class="mh">'+(MNAME[parts[0]]||parts[0])+' '+parts[1]+' (Total Due: '+fmt(r.total_due||r.amount)+')</div>');
+      win.document.write('<table><thead><tr><th>Date</th><th style="text-align:right">Paid</th><th style="text-align:right">Balance Left</th></tr></thead><tbody>');
+      var totalOwed=parseFloat(r.total_due||r.amount||s.salary), running=totalOwed;
+      (r.payments||[]).forEach(function(p){
+        running-=parseFloat(p.amount||0); grandPaid+=parseFloat(p.amount||0);
+        win.document.write('<tr><td>'+new Date(p.date).toLocaleDateString('en-PK')+'</td><td style="text-align:right">'+fmt(p.amount)+'</td><td style="text-align:right">'+fmt(Math.max(0,running))+'</td></tr>');
+      });
+      win.document.write('</tbody></table>');
+    });
+    win.document.write('<p style="font-size:11px;font-weight:700;text-align:right">Total Paid: '+fmt(grandPaid)+'</p>');
+  });
+  win.document.write('</body></html>');
+  win.document.close(); setTimeout(function(){win.print();},500);
+}
+
+function undoSalPayment(sid, key) {
+  if(viewerBlock()) return;
+  var s=DB.staff.find(function(x){return x.id===sid;});
+  var rec=DB.salaries.find(function(r){return r.sid===sid&&r.key===key;});
+  if(!rec){alert('No payment found!');return;}
+  var payments=rec.payments||[];
+  var msg;
+  if(payments.length>1){
+    var last=payments[payments.length-1];
+    msg='Undo the LAST payment for '+s.name+' ('+key+')?\n\nLast payment: '+fmt(last.amount)+' on '+new Date(last.date).toLocaleDateString('en-PK')+'\n\nThis removes only the most recent installment.';
+  } else {
+    msg='Undo salary payment for '+s.name+' ('+key+')?\n\nThis removes the entire payment record. The teacher will show as Pending again.';
+  }
+  if(!confirm(msg)) return;
+
+  if(payments.length>1){
+    // Remove just the last installment
+    var removed=payments.pop();
+    var newPaid=parseFloat(rec.paid||0)-parseFloat(removed.amount||0);
+    var totalOwed=parseFloat(rec.total_due||rec.amount);
+    rec.paid=newPaid;
+    rec.balance=Math.max(0,totalOwed-newPaid);
+    rec.partial=rec.balance>0;
+    rec.payments=payments;
+    DB.salaries=DB.salaries.filter(function(r){return!(r.sid===sid&&r.key===key);});
+    DB.salaries.push(rec);
+    syncToFB('salaries',rec);
+  } else {
+    // Remove the whole record. Set openArr so the teacher's total dues return to
+    // exactly the ORIGINAL amount owed before this payment (no double-counting).
+    var origTotal=parseFloat(rec.total_due||((parseFloat(rec.amount||0))+(parseFloat(rec.arrears||0))));
+    var salaryAmt=parseFloat(s.salary||0);
+    // Original owed = this month's salary + prior arrears.
+    // After undo (record gone), this month's salary is owed again automatically via the
+    // pending row, so openArr should hold the PRIOR arrears = origTotal - salary.
+    var priorArrears=Math.max(0, origTotal - salaryAmt);
+    DB.salaries=DB.salaries.filter(function(r){return!(r.sid===sid&&r.key===key);});
+    var rno=rec.rno||rec.id;
+    if(rno) db.ref('salaries/'+rno).remove();
+    db.ref('salaries').orderByChild('sid').equalTo(sid).once('value').then(function(snap){
+      var data=snap.val()||{};
+      Object.keys(data).forEach(function(k){ if(data[k].key===key) db.ref('salaries/'+k).remove(); });
+    });
+    var sidx=DB.staff.findIndex(function(x){return x.id===sid;});
+    if(sidx!==-1){ DB.staff[sidx].openArr=priorArrears; syncToFB('staff',DB.staff[sidx]); }
+  }
+  logActivity('Salary','UNDO salary payment: '+s.name+' | '+key,0);
+  save();
+  renderSalary(); updateDash();
+  alert('Payment undone for '+s.name+'.');
 }
 
 function confirmSal() {
   if(viewerBlock()) return;
   var s=DB.staff.find(function(x){return x.id===_psid;});
   var ex=DB.salaries.find(function(r){return r.sid===_psid&&r.key===_pskey;});
-  var alreadyPaid=ex?parseFloat(ex.paid||0):0;
-  var prevArr=GSA(_psid);
-  if(ex&&ex.partial) prevArr-=parseFloat(ex.balance||0);
-  var totalDue=parseFloat(s.salary)+prevArr;
-  var rem=totalDue-alreadyPaid;
   var rec=GN('ps-amt');
   if(!rec||rec<=0){showAlert('a-ps','Enter amount paid',true);return;}
-  if(rec>rem){
-    if(!confirm('Amount ('+fmt(rec)+') exceeds remaining ('+fmt(rem)+'). Continue?')) return;
+
+  // Determine the ORIGINAL total owed and arrears component for this month
+  var salary=parseFloat(s.salary);
+  var arrComp, totalOwed, alreadyPaid;
+  if(ex&&ex.partial){
+    // Continue from existing partial: total owed was captured on the record
+    arrComp=parseFloat(ex.arrears||0);
+    totalOwed=parseFloat(ex.total_due||(salary+arrComp));
+    alreadyPaid=parseFloat(ex.paid||0);
+  } else {
+    // Fresh payment this month: arrears = all prior unpaid (GSA), plus this month's salary
+    arrComp=GSA(_psid);
+    totalOwed=salary+arrComp;
+    alreadyPaid=0;
+  }
+  var remaining=totalOwed-alreadyPaid;
+  if(rec>remaining){
+    if(!confirm('Amount ('+fmt(rec)+') exceeds remaining ('+fmt(remaining)+'). Continue?')) return;
   }
   var totalPaid=alreadyPaid+rec;
-  var bal=Math.max(0,totalDue-totalPaid);
+  var bal=Math.max(0,totalOwed-totalPaid);
   var full=bal<=0;
   var rno=ex?ex.rno:'S-'+Date.now().toString().slice(-5);
   var now=new Date().toISOString();
-  // Track how much went toward opening arrears (reduce it permanently)
-  var openArrReduce=0;
   var sidx=DB.staff.findIndex(function(x){return x.id===_psid;});
-  if(sidx!==-1 && DB.staff[sidx].openArr>0){
-    // Reduce opening arrears by the payment, capped at openArr value
-    var curOpen=parseFloat(DB.staff[sidx].openArr||0);
-    openArrReduce=Math.min(rec, curOpen);
-    DB.staff[sidx].openArr=Math.max(0, curOpen-rec);
+
+  // On the FIRST payment of this month, the prior arrears (openArr + skipped months)
+  // get absorbed into this month's record. Clear openArr so it isn't counted again.
+  if(!ex && sidx!==-1 && DB.staff[sidx].openArr){
+    DB.staff[sidx].openArr=0;
   }
+
   var payments=(ex&&ex.payments)?ex.payments.slice():[];
   payments.push({date:now, amount:rec});
+
   DB.salaries=DB.salaries.filter(function(r){return!(r.sid===_psid&&r.key===_pskey);});
-  var salRec={id:rno,sid:_psid,key:_pskey,amount:s.salary,arrears:prevArr,
-    total_due:totalDue,paid:totalPaid,balance:bal,partial:!full,
+  var salRec={id:rno,sid:_psid,key:_pskey,amount:salary,arrears:arrComp,
+    total_due:totalOwed,paid:totalPaid,balance:bal,partial:!full,
     date:now,rno:rno,payments:payments};
   DB.salaries.push(salRec);
-  logActivity('Salary','Salary: '+s.name+' | '+_pskey,rec);
+
+  logActivity('Salary','Salary: '+s.name+' | '+_pskey+' | Paid '+fmt(rec),rec);
   save();
   syncToFB('salaries',salRec);
   if(sidx!==-1) syncToFB('staff',DB.staff[sidx]);
@@ -3244,7 +3439,7 @@ function migrateToLedger() {
   });
   save();
   logActivity('System','Ledger calibrated for '+count+' students',0);
-  alert('Done! Ledger calibrated for '+count+' student(s).\n\nVerify the Defaulters page. If any student\'s amount is wrong, open Edit Student and set the correct Arrears — the ledger will re-anchor to it.');
+  alert('Done! Ledger calibrated for '+count+' student(s).\n\nVerify the Defaulters page. If any student\'s amount is wrong, open Edit Student and set the correct Arrears.');
   updateDash();
 }
 
