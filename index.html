@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260620073223 -->
+<!-- v20260810062309 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -160,6 +161,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -398,7 +400,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
     <label>Year:</label>
     <select id="salyr" onchange="renderSalary()"><option value="2024">2024</option><option value="2025">2025</option><option value="2026" selected>2026</option></select>
   </div>
-  <div class="card"><div class="ct" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><span>Salary Status</span><button class="btn bo sm" onclick="printAllSalHistory()">Print All Staff History</button></div><div class="tw"><table><thead><tr><th>#</th><th>Name</th><th>Designation</th><th>Salary</th><th>Arrears</th><th>Total Due</th><th>Status</th><th>Action</th></tr></thead><tbody id="saltb"></tbody></table></div></div>
+  <div class="card"><div class="ct" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px"><span>Salary Status</span><div style="display:flex;gap:8px;flex-wrap:wrap"><button class="btn bp sm" onclick="openSalCalendar()">Manage Salary Months</button><button class="btn bo sm" onclick="printAllSalHistory()">Print All Staff History</button></div></div><div class="tw"><table><thead><tr><th>#</th><th>Name</th><th>Designation</th><th>Salary</th><th>Arrears</th><th>Total Due</th><th>Status</th><th>Action</th></tr></thead><tbody id="saltb"></tbody></table></div></div>
 </div>
 
 <!-- EXPENSES -->
@@ -773,6 +775,43 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 </div>
 </div><!-- end main-content -->
 
+<!-- SALARY CALENDAR MODAL -->
+<div class="ov" id="ov-salcal">
+  <div class="md" style="max-width:640px">
+    <button class="mx" onclick="CM('ov-salcal')">&times;</button>
+    <div class="mt">Manage Salary Months</div>
+    <p style="font-size:12px;color:var(--ink-s);margin-bottom:14px">Mark months where staff shouldn't be paid (e.g. summer holidays). Those months won't count toward arrears or dues.</p>
+
+    <div class="bb" style="background:var(--blue-p)">
+      <div style="font-weight:700;color:var(--blue);margin-bottom:8px">Bulk Apply (Multiple Staff)</div>
+      <div id="sc-bulk-staff" style="max-height:120px;overflow-y:auto;background:#fff;border-radius:6px;padding:8px;margin-bottom:8px"></div>
+      <button class="btn bo sm" onclick="scSelectAll()" style="margin-bottom:10px">Select All Staff</button>
+      <div class="fr">
+        <div class="fg"><label>From Month</label><select id="sc-from-mo"><option>Jan</option><option>Feb</option><option>Mar</option><option>Apr</option><option>May</option><option selected>Jun</option><option>Jul</option><option>Aug</option><option>Sep</option><option>Oct</option><option>Nov</option><option>Dec</option></select></div>
+        <div class="fg"><label>From Year</label><input id="sc-from-yr" type="number" value="2026" style="width:90px"></div>
+      </div>
+      <div class="fr">
+        <div class="fg"><label>To Month</label><select id="sc-to-mo"><option>Jan</option><option>Feb</option><option>Mar</option><option>Apr</option><option>May</option><option>Jun</option><option>Jul</option><option selected>Aug</option><option>Sep</option><option>Oct</option><option>Nov</option><option>Dec</option></select></div>
+        <div class="fg"><label>To Year</label><input id="sc-to-yr" type="number" value="2026" style="width:90px"></div>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:8px">
+        <button class="btn br sm" onclick="bulkSetOffMonths(true)">Mark No Salary Due</button>
+        <button class="btn bg2 sm" onclick="bulkSetOffMonths(false)">Mark Payable</button>
+      </div>
+    </div>
+
+    <div style="margin-top:16px">
+      <div style="font-weight:700;color:var(--blue);margin-bottom:8px">Individual Staff Calendar</div>
+      <div class="fr">
+        <div class="fg"><label>Staff</label><select id="sc-staff" onchange="renderSalCalendarGrid()"></select></div>
+        <div class="fg"><label>Year</label><input id="sc-year" type="number" onchange="renderSalCalendarGrid()" style="width:100px"></div>
+      </div>
+      <div id="sc-grid"></div>
+      <p style="font-size:11px;color:var(--ink-m);margin-top:8px">Tap a month to toggle Payable / No Salary Due.</p>
+    </div>
+  </div>
+</div>
+
 <!-- SALARY HISTORY MODAL -->
 <div class="ov" id="ov-salhist">
   <div class="md" style="max-width:640px">
@@ -993,6 +1032,11 @@ function deleteFromFB(table, id) {
 function uid() { return Date.now().toString(36) + Math.random().toString(36).substr(2,5); }
 function fmt(n) { return 'Rs. ' + Number(n||0).toLocaleString(); }
 function GA(id) { var s=DB.students.find(function(x){return x.id===id;}); return s?parseFloat(s.arr||0):0; }
+function isSalOff(sid, key) {
+  var st=DB.staff.find(function(x){return x.id===sid;});
+  return !!(st && st.offMonths && st.offMonths.indexOf(key)>=0);
+}
+
 function GSA(id) {
   var total=0;
   // 1. Partial balances from any month
@@ -1011,7 +1055,8 @@ function GSA(id) {
       while(y<curY || (y===curY && m<curM)){ // only PAST months, not current
         var k=MONTHS[m]+'-'+y;
         var rec=DB.salaries.find(function(r){return r.sid===id&&r.key===k;});
-        if(!rec) total+=parseFloat(st.salary||0); // skipped month = full salary owed
+        var isOff=st.offMonths && st.offMonths.indexOf(k)>=0;
+        if(!rec && !isOff) total+=parseFloat(st.salary||0); // skipped month = full salary owed (unless marked off)
         m++; if(m>11){m=0;y++;}
       }
     }
@@ -2327,7 +2372,7 @@ function addStaff() {
   var name=GV('tn'),role=GV('tr'),sal=GN('tsal'),ph=GV('tph'),openArr=GN('topenarr')||0;
   if(!name||!role||!sal){showAlert('a-st','Fill required fields',true);return;}
   var d=new Date();
-  var ns={id:uid(),name:name,role:role,salary:sal,phone:ph,openArr:openArr,salaryStart:MONTHS[d.getMonth()]+'-'+d.getFullYear()};
+  var ns={id:uid(),name:name,role:role,salary:sal,phone:ph,openArr:openArr,salaryStart:MONTHS[d.getMonth()]+'-'+d.getFullYear(),offMonths:[]};
   DB.staff.push(ns); save(); syncToFB('staff',ns);['tn','tr','tsal','tph','topenarr'].forEach(function(id){var e=G(id);if(e)e.value='';});
   logActivity('Staff','Staff added: '+name+' | '+role);
   showAlert('a-st',name+' added!'); renderStaff(); updateDash();
@@ -2390,15 +2435,17 @@ function renderSalary() {
     var rec=DB.salaries.find(function(r){return r.sid===s.id&&r.key===key;});
     var salArr=GSA(s.id);
     if(rec&&rec.partial) salArr=salArr-parseFloat(rec.balance||0);
-    var totalDue=parseFloat(s.salary)+salArr;
+    var thisMonthOff=!rec && isSalOff(s.id,key);
+    var totalDue=thisMonthOff?salArr:(parseFloat(s.salary)+salArr);
     if(rec&&rec.partial) totalDue=parseFloat(rec.balance||0);
     var badge,action;
-    if(!rec){badge='<span class="bx bd">Pending</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Pay</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button></div>';}
+    if(thisMonthOff){badge='<span class="bx" style="background:var(--cream);color:var(--ink-m)">No Salary Due</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button></div>';}
+    else if(!rec){badge='<span class="bx bd">Pending</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Pay</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button></div>';}
     else if(rec.partial){badge='<span class="bx borg">Partial</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bg2 sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Add More</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showSalSlip(this.dataset.id,this.dataset.key)">Slip</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoSalPayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
     else{badge='<span class="bx bg">Paid</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showSalSlip(this.dataset.id,this.dataset.key)">Slip</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoSalPayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
     var ac=salArr>0?'color:var(--red)':'color:var(--ink-m)';
     var tc=salArr>0?'color:var(--red);font-weight:600':'font-weight:600';
-    rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.role+'</td><td>'+fmt(s.salary)+'</td><td style="'+ac+'">'+(salArr>0?fmt(salArr):'—')+'</td><td style="'+tc+'">'+fmt(totalDue)+'</td><td>'+badge+'</td><td>'+action+'</td></tr>';
+    rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.role+'</td><td>'+(thisMonthOff?'<span style="color:var(--ink-m)">Off</span>':fmt(s.salary))+'</td><td style="'+ac+'">'+(salArr>0?fmt(salArr):'—')+'</td><td style="'+tc+'">'+fmt(totalDue)+'</td><td>'+badge+'</td><td>'+action+'</td></tr>';
   }
   tb.innerHTML=rows;
 }
@@ -2439,6 +2486,93 @@ function psUpdate() {
   G('ps-bal').textContent=bal>0?fmt(bal):'Fully Paid';
   G('ps-bal').style.color=bal>0?'var(--red)':'var(--green-l)';
   G('ps-res').style.display='block';
+}
+
+function openSalCalendar() {
+  // Populate staff dropdown + checkboxes
+  var sel=G('sc-staff');
+  if(sel){
+    var cur=sel.value;
+    sel.innerHTML='';
+    DB.staff.forEach(function(s){ sel.innerHTML+='<option value="'+s.id+'">'+s.name+'</option>'; });
+    if(cur) sel.value=cur;
+  }
+  var cb=G('sc-bulk-staff');
+  if(cb){
+    cb.innerHTML='';
+    DB.staff.forEach(function(s){
+      cb.innerHTML+='<label style="display:flex;align-items:center;gap:6px;padding:4px 0;font-size:13px"><input type="checkbox" class="sc-cb" value="'+s.id+'" style="width:15px;height:15px"> '+s.name+'</label>';
+    });
+  }
+  var yr=G('sc-year'); if(yr && !yr.value) yr.value=String(new Date().getFullYear());
+  renderSalCalendarGrid();
+  OM('ov-salcal');
+}
+
+function scSelectAll() {
+  document.querySelectorAll('.sc-cb').forEach(function(c){ c.checked=true; });
+}
+
+function renderSalCalendarGrid() {
+  var sid=GV('sc-staff'), yr=GV('sc-year')||String(new Date().getFullYear());
+  var grid=G('sc-grid');
+  if(!sid||!grid) return;
+  var s=DB.staff.find(function(x){return x.id===sid;});
+  if(!s){grid.innerHTML='';return;}
+  if(!s.offMonths) s.offMonths=[];
+  var html='<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px">';
+  MONTHS.forEach(function(m){
+    var key=m+'-'+yr;
+    var off=s.offMonths.indexOf(key)>=0;
+    var bg=off?'#f0f0f0':'var(--green-p)';
+    var col=off?'var(--ink-m)':'var(--green-l)';
+    var label=off?'No Salary Due':'Payable';
+    html+='<button class="btn sm" data-key="'+key+'" onclick="toggleOffMonth(this.dataset.key)" style="background:'+bg+';color:'+col+';border:1px solid '+(off?'#ddd':'transparent')+';padding:10px 6px;text-align:center;line-height:1.4">'
+      +'<div style="font-weight:700">'+MNAME[m]+' '+yr+'</div><div style="font-size:10px">'+label+'</div></button>';
+  });
+  html+='</div>';
+  grid.innerHTML=html;
+}
+
+function toggleOffMonth(key) {
+  if(viewerBlock()) return;
+  var sid=GV('sc-staff');
+  var idx=DB.staff.findIndex(function(x){return x.id===sid;});
+  if(idx===-1) return;
+  var st=DB.staff[idx];
+  if(!st.offMonths) st.offMonths=[];
+  var pos=st.offMonths.indexOf(key);
+  if(pos>=0) st.offMonths.splice(pos,1); else st.offMonths.push(key);
+  save(); syncToFB('staff',st);
+  renderSalCalendarGrid();
+  renderSalary(); updateDash();
+}
+
+function bulkSetOffMonths(setOff) {
+  if(viewerBlock()) return;
+  var ids=Array.from(document.querySelectorAll('.sc-cb:checked')).map(function(c){return c.value;});
+  if(!ids.length){alert('Select at least one staff member');return;}
+  var fromMo=GV('sc-from-mo'), fromYr=GV('sc-from-yr'), toMo=GV('sc-to-mo'), toYr=GV('sc-to-yr');
+  var fromIdx=MIDX(fromMo+'-'+fromYr), toIdx=MIDX(toMo+'-'+toYr);
+  if(fromIdx<0||toIdx<0||fromIdx>toIdx){alert('Check the month range');return;}
+  var keys=[];
+  var y=parseInt(fromYr), m=MONTHS.indexOf(fromMo);
+  while(y*12+m<=toIdx){ keys.push(MONTHS[m]+'-'+y); m++; if(m>11){m=0;y++;} }
+  ids.forEach(function(sid){
+    var idx=DB.staff.findIndex(function(x){return x.id===sid;});
+    if(idx===-1) return;
+    var st=DB.staff[idx];
+    if(!st.offMonths) st.offMonths=[];
+    keys.forEach(function(k){
+      var pos=st.offMonths.indexOf(k);
+      if(setOff && pos<0) st.offMonths.push(k);
+      if(!setOff && pos>=0) st.offMonths.splice(pos,1);
+    });
+    syncToFB('staff',st);
+  });
+  save();
+  alert((setOff?'Marked ':'Cleared ')+keys.length+' month(s) for '+ids.length+' staff member(s).');
+  renderSalCalendarGrid(); renderSalary(); updateDash();
 }
 
 function showSalHistory(sid) {
@@ -3787,6 +3921,7 @@ if(sessionStorage.getItem('dea-viewer')==='yes'){
     }
   });
 }
+
 
 
 </script>
