@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260810062309 -->
+<!-- v20260822154532 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -161,6 +162,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -1039,7 +1041,8 @@ function isSalOff(sid, key) {
 
 function GSA(id) {
   var total=0;
-  // 1. Partial balances from any month
+  // 1. Partial balances from any month (records already correctly exclude
+  //    off-month salary charges — see applyOffAdjustment)
   DB.salaries.forEach(function(r){ if(r.sid===id&&r.partial&&r.balance>0) total+=parseFloat(r.balance||0); });
   // 2. Manual opening arrears (pending before software)
   var st=DB.staff.find(function(x){return x.id===id;});
@@ -2435,17 +2438,20 @@ function renderSalary() {
     var rec=DB.salaries.find(function(r){return r.sid===s.id&&r.key===key;});
     var salArr=GSA(s.id);
     if(rec&&rec.partial) salArr=salArr-parseFloat(rec.balance||0);
-    var thisMonthOff=!rec && isSalOff(s.id,key);
+    var isOffFlag=isSalOff(s.id,key);
+    var thisMonthOff=!rec && isOffFlag;
     var totalDue=thisMonthOff?salArr:(parseFloat(s.salary)+salArr);
     if(rec&&rec.partial) totalDue=parseFloat(rec.balance||0);
+    var offTag=(isOffFlag?' <span class="bx" style="background:var(--cream);color:var(--ink-m);font-size:10px">Off Month</span>':'');
     var badge,action;
-    if(thisMonthOff){badge='<span class="bx" style="background:var(--cream);color:var(--ink-m)">No Salary Due</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button></div>';}
+    if(thisMonthOff){badge='<span class="bx" style="background:var(--cream);color:var(--ink-m)">No Salary Due</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Pay Anyway</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button></div>';}
     else if(!rec){badge='<span class="bx bd">Pending</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Pay</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button></div>';}
-    else if(rec.partial){badge='<span class="bx borg">Partial</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bg2 sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Add More</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showSalSlip(this.dataset.id,this.dataset.key)">Slip</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoSalPayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
-    else{badge='<span class="bx bg">Paid</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showSalSlip(this.dataset.id,this.dataset.key)">Slip</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoSalPayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
+    else if(rec.partial){badge='<span class="bx borg">Partial</span>'+offTag;action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bg2 sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Add More</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showSalSlip(this.dataset.id,this.dataset.key)">Slip</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoSalPayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
+    else{badge='<span class="bx bg">Paid</span>'+offTag;action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showSalSlip(this.dataset.id,this.dataset.key)">Slip</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoSalPayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
     var ac=salArr>0?'color:var(--red)':'color:var(--ink-m)';
     var tc=salArr>0?'color:var(--red);font-weight:600':'font-weight:600';
-    rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.role+'</td><td>'+(thisMonthOff?'<span style="color:var(--ink-m)">Off</span>':fmt(s.salary))+'</td><td style="'+ac+'">'+(salArr>0?fmt(salArr):'—')+'</td><td style="'+tc+'">'+fmt(totalDue)+'</td><td>'+badge+'</td><td>'+action+'</td></tr>';
+    var salCol=rec?(parseFloat(rec.amount||0)>0?fmt(rec.amount):'<span style="color:var(--ink-m)">Off</span>'):(isOffFlag?'<span style="color:var(--ink-m)">Off</span>':fmt(s.salary));
+    rows+='<tr><td>'+(i+1)+'</td><td><strong>'+s.name+'</strong></td><td>'+s.role+'</td><td>'+salCol+'</td><td style="'+ac+'">'+(salArr>0?fmt(salArr):'—')+'</td><td style="'+tc+'">'+fmt(totalDue)+'</td><td>'+badge+'</td><td>'+action+'</td></tr>';
   }
   tb.innerHTML=rows;
 }
@@ -2534,6 +2540,32 @@ function renderSalCalendarGrid() {
   grid.innerHTML=html;
 }
 
+// Directly adjusts an existing salary record when a month's off-status changes.
+// goingOff=true removes that month's salary charge (but never below what's already paid).
+// goingOff=false (marking Payable again) adds the salary charge back.
+// Payments already made are NEVER touched — only the charge/balance changes.
+function applyOffAdjustment(sid, key, goingOff) {
+  var st=DB.staff.find(function(x){return x.id===sid;});
+  var rec=DB.salaries.find(function(r){return r.sid===sid&&r.key===key;});
+  if(!st||!rec) return; // nothing stored for this month — offMonths flag alone handles it
+  var salary=parseFloat(st.salary||0);
+  var paid=parseFloat(rec.paid||0);
+  var totalDue=parseFloat(rec.total_due||rec.amount||0);
+  var newTotal;
+  if(goingOff){
+    newTotal=Math.max(paid, totalDue-salary);
+    rec.amount=0;
+  } else {
+    newTotal=totalDue+salary;
+    rec.amount=salary;
+  }
+  rec.total_due=newTotal;
+  rec.arrears=Math.max(0,newTotal-rec.amount);
+  rec.balance=Math.max(0,newTotal-paid);
+  rec.partial=rec.balance>0;
+  syncToFB('salaries',rec);
+}
+
 function toggleOffMonth(key) {
   if(viewerBlock()) return;
   var sid=GV('sc-staff');
@@ -2542,7 +2574,9 @@ function toggleOffMonth(key) {
   var st=DB.staff[idx];
   if(!st.offMonths) st.offMonths=[];
   var pos=st.offMonths.indexOf(key);
+  var goingOff = pos<0; // if not currently in the list, we're about to turn it OFF
   if(pos>=0) st.offMonths.splice(pos,1); else st.offMonths.push(key);
+  applyOffAdjustment(sid, key, goingOff);
   save(); syncToFB('staff',st);
   renderSalCalendarGrid();
   renderSalary(); updateDash();
@@ -2565,8 +2599,8 @@ function bulkSetOffMonths(setOff) {
     if(!st.offMonths) st.offMonths=[];
     keys.forEach(function(k){
       var pos=st.offMonths.indexOf(k);
-      if(setOff && pos<0) st.offMonths.push(k);
-      if(!setOff && pos>=0) st.offMonths.splice(pos,1);
+      if(setOff && pos<0){ st.offMonths.push(k); applyOffAdjustment(sid,k,true); }
+      if(!setOff && pos>=0){ st.offMonths.splice(pos,1); applyOffAdjustment(sid,k,false); }
     });
     syncToFB('staff',st);
   });
