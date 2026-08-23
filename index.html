@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260822154532 -->
+<!-- v20260823170436 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -162,6 +163,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -1039,33 +1041,52 @@ function isSalOff(sid, key) {
   return !!(st && st.offMonths && st.offMonths.indexOf(key)>=0);
 }
 
-function GSA(id) {
-  var total=0;
-  // 1. Partial balances from any month (records already correctly exclude
-  //    off-month salary charges — see applyOffAdjustment)
-  DB.salaries.forEach(function(r){ if(r.sid===id&&r.partial&&r.balance>0) total+=parseFloat(r.balance||0); });
-  // 2. Manual opening arrears (pending before software)
+// ===== CORRECT SALARY OUTSTANDING =====
+// Total charged (salary x chargeable months, skipping "off" months) minus total paid.
+// Avoids the old double-count where each month's total already contained the
+// previous month's unpaid amount.
+function staffOutstanding(id, uptoKey) {
   var st=DB.staff.find(function(x){return x.id===id;});
-  if(st&&st.openArr) total+=parseFloat(st.openArr||0);
-  // 3. Completely skipped (unpaid) past months — count full salary
-  if(st&&st.salaryStart){
-    var now=new Date();
-    var curY=now.getFullYear(), curM=now.getMonth();
-    var parts=st.salaryStart.split('-'); // format: MonAbbrev-Year
-    var startM=MONTHS.indexOf(parts[0]), startY=parseInt(parts[1]);
-    if(startM>=0){
-      var y=startY, m=startM;
-      while(y<curY || (y===curY && m<curM)){ // only PAST months, not current
-        var k=MONTHS[m]+'-'+y;
-        var rec=DB.salaries.find(function(r){return r.sid===id&&r.key===k;});
-        var isOff=st.offMonths && st.offMonths.indexOf(k)>=0;
-        if(!rec && !isOff) total+=parseFloat(st.salary||0); // skipped month = full salary owed (unless marked off)
-        m++; if(m>11){m=0;y++;}
+  if(!st) return 0;
+  var salary=parseFloat(st.salary||0);
+  var uptoIdx=MIDX(uptoKey);
+  if(uptoIdx<0) return 0;
+  var recs=DB.salaries.filter(function(r){return r.sid===id && MIDX(r.key)>=0;});
+  recs.sort(function(a,b){return MIDX(a.key)-MIDX(b.key);});
+  if(!recs.length){
+    // No payment history: only their opening arrears, plus salary for months
+    // since salaryStart (if set), skipping off months.
+    var base0=parseFloat(st.openArr||0);
+    if(st.salaryStart && MIDX(st.salaryStart)>=0){
+      var i0=MIDX(st.salaryStart);
+      while(i0<=uptoIdx){
+        var y0=Math.floor(i0/12), m0=i0%12, k0=MONTHS[m0]+'-'+y0;
+        if(!isSalOff(id,k0)) base0+=salary;
+        i0++;
       }
     }
+    return Math.max(0, base0);
   }
-  return total;
+  var base=parseFloat(recs[0].arrears||0);   // dues owed before their first recorded month
+  var i=MIDX(recs[0].key), charged=0;
+  while(i<=uptoIdx){
+    var y=Math.floor(i/12), m=i%12, k=MONTHS[m]+'-'+y;
+    if(!isSalOff(id,k)) charged+=salary;
+    i++;
+  }
+  var paid=0;
+  recs.forEach(function(r){ if(MIDX(r.key)<=uptoIdx) paid+=parseFloat(r.paid||0); });
+  return Math.max(0, base+charged-paid);
 }
+
+function GSA(id) {
+  // Prior arrears = everything owed up to the END of last month
+  var d=new Date();
+  var pm=d.getMonth()-1, py=d.getFullYear();
+  if(pm<0){pm=11;py--;}
+  return staffOutstanding(id, MONTHS[pm]+'-'+py);
+}
+
 
 
 // ===== CENTRAL DUES CALCULATION (single source of truth) =====
@@ -2436,15 +2457,15 @@ function renderSalary() {
   for(var i=0;i<DB.staff.length;i++){
     var s=DB.staff[i];
     var rec=DB.salaries.find(function(r){return r.sid===s.id&&r.key===key;});
-    var salArr=GSA(s.id);
-    if(rec&&rec.partial) salArr=salArr-parseFloat(rec.balance||0);
     var isOffFlag=isSalOff(s.id,key);
-    var thisMonthOff=!rec && isOffFlag;
-    var totalDue=thisMonthOff?salArr:(parseFloat(s.salary)+salArr);
-    if(rec&&rec.partial) totalDue=parseFloat(rec.balance||0);
+    var thisMonthOff=isOffFlag;
+    // Correct: everything owed up to this month, and up to last month (= arrears)
+    var totalDue=staffOutstanding(s.id,key);
+    var pIdx=MIDX(key)-1;
+    var salArr=staffOutstanding(s.id, MONTHS[pIdx%12]+'-'+Math.floor(pIdx/12));
     var offTag=(isOffFlag?' <span class="bx" style="background:var(--cream);color:var(--ink-m);font-size:10px">Off Month</span>':'');
     var badge,action;
-    if(thisMonthOff){badge='<span class="bx" style="background:var(--cream);color:var(--ink-m)">No Salary Due</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Pay Anyway</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button></div>';}
+    if(thisMonthOff&&!rec){badge='<span class="bx" style="background:var(--cream);color:var(--ink-m)">No Salary Due</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Pay Anyway</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button></div>';}
     else if(!rec){badge='<span class="bx bd">Pending</span>';action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bp sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Pay</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button></div>';}
     else if(rec.partial){badge='<span class="bx borg">Partial</span>'+offTag;action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bg2 sm" data-id="'+s.id+'" data-key="'+key+'" onclick="openPS(this.dataset.id,this.dataset.key)">Add More</button><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showSalSlip(this.dataset.id,this.dataset.key)">Slip</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoSalPayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
     else{badge='<span class="bx bg">Paid</span>'+offTag;action='<div style="display:flex;gap:4px;flex-wrap:wrap"><button class="btn bo sm" data-id="'+s.id+'" data-key="'+key+'" onclick="showSalSlip(this.dataset.id,this.dataset.key)">Slip</button><button class="btn bo sm" data-id="'+s.id+'" onclick="showSalHistory(this.dataset.id)">History</button><button class="btn br sm" data-id="'+s.id+'" data-key="'+key+'" onclick="undoSalPayment(this.dataset.id,this.dataset.key)">Undo</button></div>';}
@@ -2460,33 +2481,18 @@ function openPS(sid,key) {
   var ex=DB.salaries.find(function(r){return r.sid===sid&&r.key===key;});
   _psid=sid;_pskey=key;
   var alreadyPaid=ex?parseFloat(ex.paid||0):0;
-  var remaining, salComp, arrComp;
-  if(ex&&ex.partial){
-    // Already a partial payment this month: remaining is simply the record balance
-    remaining=parseFloat(ex.balance||0);
-    salComp=parseFloat(ex.amount||s.salary);
-    arrComp=parseFloat(ex.arrears||0);
-  } else {
-    // No payment yet: total = this month's salary + all prior arrears
-    arrComp=GSA(sid);
-    salComp=parseFloat(s.salary);
-    remaining=salComp+arrComp;
-  }
+  var remaining=staffOutstanding(sid,key);
+  var salComp=isSalOff(sid,key)?0:parseFloat(s.salary||0);
+  var pIdx=MIDX(key)-1;
+  var arrComp=staffOutstanding(sid, MONTHS[pIdx%12]+'-'+Math.floor(pIdx/12));
   G('ps-info').innerHTML='<strong>'+s.name+'</strong> | '+s.role+(alreadyPaid>0?' | Already Paid: <strong>'+fmt(alreadyPaid)+'</strong>':'');
-  G('ps-sal').textContent=fmt(salComp)+(arrComp>0?' + Arrears: '+fmt(arrComp):'');
+  G('ps-sal').textContent=(salComp>0?fmt(salComp):'No salary this month')+(arrComp>0?' + Arrears: '+fmt(arrComp):'');
   G('ps-due').textContent=fmt(Math.max(0,remaining));
   G('ps-amt').value=''; G('ps-res').style.display='none'; OM('ov-ps');
 }
 
 function psUpdate() {
-  var s=DB.staff.find(function(x){return x.id===_psid;});
-  var ex=DB.salaries.find(function(r){return r.sid===_psid&&r.key===_pskey;});
-  var remaining;
-  if(ex&&ex.partial){
-    remaining=parseFloat(ex.balance||0);
-  } else {
-    remaining=parseFloat(s.salary)+GSA(_psid);
-  }
+  var remaining=staffOutstanding(_psid,_pskey);
   var rec=GN('ps-amt'),bal=remaining-rec;
   G('ps-rec').textContent=fmt(rec);
   G('ps-bal').textContent=bal>0?fmt(bal):'Fully Paid';
@@ -2540,28 +2546,19 @@ function renderSalCalendarGrid() {
   grid.innerHTML=html;
 }
 
-// Directly adjusts an existing salary record when a month's off-status changes.
-// goingOff=true removes that month's salary charge (but never below what's already paid).
-// goingOff=false (marking Payable again) adds the salary charge back.
-// Payments already made are NEVER touched — only the charge/balance changes.
+// With the corrected calculation (staffOutstanding), off-months are handled by the
+// formula itself — stored records no longer need rewriting. We only refresh the
+// record's own salary/total fields so History and Slips display the right numbers.
 function applyOffAdjustment(sid, key, goingOff) {
   var st=DB.staff.find(function(x){return x.id===sid;});
   var rec=DB.salaries.find(function(r){return r.sid===sid&&r.key===key;});
-  if(!st||!rec) return; // nothing stored for this month — offMonths flag alone handles it
+  if(!st||!rec) return;
   var salary=parseFloat(st.salary||0);
   var paid=parseFloat(rec.paid||0);
-  var totalDue=parseFloat(rec.total_due||rec.amount||0);
-  var newTotal;
-  if(goingOff){
-    newTotal=Math.max(paid, totalDue-salary);
-    rec.amount=0;
-  } else {
-    newTotal=totalDue+salary;
-    rec.amount=salary;
-  }
-  rec.total_due=newTotal;
-  rec.arrears=Math.max(0,newTotal-rec.amount);
-  rec.balance=Math.max(0,newTotal-paid);
+  var arrears=parseFloat(rec.arrears||0);
+  rec.amount=goingOff?0:salary;
+  rec.total_due=arrears+rec.amount;
+  rec.balance=Math.max(0,rec.total_due-paid);
   rec.partial=rec.balance>0;
   syncToFB('salaries',rec);
 }
@@ -2769,42 +2766,30 @@ function confirmSal() {
   var rec=GN('ps-amt');
   if(!rec||rec<=0){showAlert('a-ps','Enter amount paid',true);return;}
 
-  // Determine the ORIGINAL total owed and arrears component for this month
-  var salary=parseFloat(s.salary);
-  var arrComp, totalOwed, alreadyPaid;
-  if(ex&&ex.partial){
-    // Continue from existing partial: total owed was captured on the record
-    arrComp=parseFloat(ex.arrears||0);
-    totalOwed=parseFloat(ex.total_due||(salary+arrComp));
-    alreadyPaid=parseFloat(ex.paid||0);
-  } else {
-    // Fresh payment this month: arrears = all prior unpaid (GSA), plus this month's salary
-    arrComp=GSA(_psid);
-    totalOwed=salary+arrComp;
-    alreadyPaid=0;
-  }
-  var remaining=totalOwed-alreadyPaid;
+  var remaining=staffOutstanding(_psid,_pskey);
   if(rec>remaining){
     if(!confirm('Amount ('+fmt(rec)+') exceeds remaining ('+fmt(remaining)+'). Continue?')) return;
   }
+  var salaryAmt=isSalOff(_psid,_pskey)?0:parseFloat(s.salary||0);
+  var pIdx=MIDX(_pskey)-1;
+  var arrComp=ex?parseFloat(ex.arrears||0):staffOutstanding(_psid, MONTHS[pIdx%12]+'-'+Math.floor(pIdx/12));
+  var alreadyPaid=ex?parseFloat(ex.paid||0):0;
   var totalPaid=alreadyPaid+rec;
+  var totalOwed=arrComp+salaryAmt;
   var bal=Math.max(0,totalOwed-totalPaid);
   var full=bal<=0;
   var rno=ex?ex.rno:'S-'+Date.now().toString().slice(-5);
   var now=new Date().toISOString();
   var sidx=DB.staff.findIndex(function(x){return x.id===_psid;});
 
-  // On the FIRST payment of this month, the prior arrears (openArr + skipped months)
-  // get absorbed into this month's record. Clear openArr so it isn't counted again.
-  if(!ex && sidx!==-1 && DB.staff[sidx].openArr){
-    DB.staff[sidx].openArr=0;
-  }
+  // First payment ever absorbs the opening arrears into this record
+  if(!ex && sidx!==-1 && DB.staff[sidx].openArr){ DB.staff[sidx].openArr=0; }
 
   var payments=(ex&&ex.payments)?ex.payments.slice():[];
   payments.push({date:now, amount:rec});
 
   DB.salaries=DB.salaries.filter(function(r){return!(r.sid===_psid&&r.key===_pskey);});
-  var salRec={id:rno,sid:_psid,key:_pskey,amount:salary,arrears:arrComp,
+  var salRec={id:rno,sid:_psid,key:_pskey,amount:salaryAmt,arrears:arrComp,
     total_due:totalOwed,paid:totalPaid,balance:bal,partial:!full,
     date:now,rno:rno,payments:payments};
   DB.salaries.push(salRec);
