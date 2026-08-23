@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260823172756 -->
+<!-- v20260823173647 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -243,6 +244,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 
 
 
+
 </style>
 </head>
 <body>
@@ -366,9 +368,15 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
     <div class="ct" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
       <span>Schedule</span>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <div id="tt-editbtns" style="display:flex;gap:8px;flex-wrap:wrap">
-          <button class="btn bo sm" onclick="printTTClass()">Print This Class</button>
-          <button class="btn bo sm" onclick="printTTAllClasses()">Print All Classes</button>
+        <div id="tt-editbtns" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <button class="btn bp sm" onclick="printTTMaster()">Master Sheet (1 Page)</button>
+          <select id="tt-masterday" style="padding:5px;font-size:12px;border:1px solid var(--bdr);border-radius:6px">
+            <option value="0">Monday</option><option value="1">Tuesday</option><option value="2">Wednesday</option>
+            <option value="3">Thursday</option><option value="4">Friday</option><option value="5">Saturday</option>
+          </select>
+          <button class="btn bo sm" onclick="printTTMasterDay()">Print That Day</button>
+          <button class="btn bo sm" onclick="printTTClass()">This Class</button>
+          <button class="btn bo sm" onclick="printTTAllClasses()">All Classes (separate pages)</button>
           <button class="btn br sm" onclick="ttClearClass()">Clear Class</button>
         </div>
         <div id="tt-teabtns" style="display:none;gap:8px;flex-wrap:wrap">
@@ -1323,6 +1331,100 @@ function printTTAllTeachers(){
   w.document.write('</body></html>'); w.document.close();
   setTimeout(function(){w.print();},400);
 }
+
+// Master sheet: every class on ONE landscape page (rows = classes, cols = periods, grouped by day)
+function printTTMaster(){
+  var c=ttConfig();
+  var cols=c.periods + (c.break1>0?1:0) + (c.break2>0?1:0);
+  var w=window.open('','_blank');
+  w.document.write('<!DOCTYPE html><html><head><title>Master Timetable</title><style>'
+    +'@page{size:A4 landscape;margin:5mm}'
+    +'*{box-sizing:border-box;margin:0;padding:0}'
+    +'body{font-family:Arial,sans-serif;font-size:6pt}'
+    +'h2{text-align:center;font-size:11pt;margin-bottom:0}'
+    +'h3{text-align:center;font-size:7pt;font-weight:400;margin-bottom:3px}'
+    +'table{width:100%;border-collapse:collapse;table-layout:fixed}'
+    +'th,td{border:0.4pt solid #888;padding:0 2px;text-align:center;overflow:hidden;height:10.5px}'
+    +'th{background:#1a3a6b;color:#fff;font-size:6pt;height:12px}'
+    +'.dh{background:#c8972a;color:#fff;font-weight:700;font-size:6.5pt;text-align:left;padding:0 4px;height:11px}'
+    +'.cl{background:#eef2f8;font-weight:700;text-align:left;font-size:6pt;width:46px}'
+    +'.br{background:#f3e7c8;width:14px}'
+    +'.sb{font-weight:700;font-size:6pt;display:block;line-height:1.05}'
+    +'.tn{font-size:5pt;color:#444;display:block;line-height:1.02}'
+    +'</style></head><body>');
+  w.document.write('<h2>DAR-E-ARQAM SCHOOL</h2><h3>Haveli Lakha Campus &mdash; Master Timetable (All Classes)</h3>');
+  w.document.write('<table>');
+  // header row
+  w.document.write('<tr><th class="cl" style="background:#1a3a6b;color:#fff">Class</th>');
+  for(var p=1;p<=c.periods;p++){
+    w.document.write('<th>P'+p+'</th>');
+    if(p===c.break1) w.document.write('<th class="br" style="background:#1a3a6b;color:#fff">B</th>');
+    if(p===c.break2&&c.break2>0) w.document.write('<th class="br" style="background:#1a3a6b;color:#fff">B</th>');
+  }
+  w.document.write('</tr>');
+  TT_DAYS.forEach(function(day,d){
+    w.document.write('<tr><td class="dh" colspan="'+(cols+1)+'">'+day+'</td></tr>');
+    TT_CLASSES.forEach(function(cls){
+      w.document.write('<tr><td class="cl">'+cls+'</td>');
+      for(var p=1;p<=c.periods;p++){
+        var e=ttGet(cls,d,p);
+        var sub=(e&&e.subject)?'<span class="sb">'+e.subject+'</span>':'';
+        var tea=(e&&e.teacher)?'<span class="tn">'+ttTeacherName(e.teacher)+'</span>':'';
+        w.document.write('<td>'+sub+tea+'</td>');
+        if(p===c.break1) w.document.write('<td class="br"></td>');
+        if(p===c.break2&&c.break2>0) w.document.write('<td class="br"></td>');
+      }
+      w.document.write('</tr>');
+    });
+  });
+  w.document.write('</table></body></html>');
+  w.document.close();
+  setTimeout(function(){w.print();},400);
+}
+
+// One day's master grid on a single page (bigger, easier to read)
+function printTTMasterDay(){
+  var c=ttConfig();
+  var d=parseInt(GV('tt-masterday')||'0');
+  var cols=c.periods + (c.break1>0?1:0) + (c.break2>0?1:0);
+  var w=window.open('','_blank');
+  w.document.write('<!DOCTYPE html><html><head><title>Master - '+TT_DAYS[d]+'</title><style>'
+    +'@page{size:A4 landscape;margin:10mm}'
+    +'*{box-sizing:border-box;margin:0;padding:0}'
+    +'body{font-family:Arial,sans-serif;font-size:9pt}'
+    +'h2{text-align:center;font-size:16pt}h3{text-align:center;font-size:10pt;font-weight:400;margin-bottom:8px}'
+    +'table{width:100%;border-collapse:collapse;table-layout:fixed}'
+    +'th,td{border:0.6pt solid #777;padding:4px 3px;text-align:center;height:38px}'
+    +'th{background:#1a3a6b;color:#fff;font-size:9pt}'
+    +'.cl{background:#eef2f8;font-weight:700;text-align:left;width:70px}'
+    +'.br{background:#f3e7c8;width:22px}'
+    +'.sb{font-weight:700;display:block}.tn{font-size:7pt;color:#444;display:block}'
+    +'</style></head><body>');
+  w.document.write('<h2>DAR-E-ARQAM SCHOOL</h2><h3>Haveli Lakha Campus &mdash; '+TT_DAYS[d]+' (All Classes)</h3>');
+  w.document.write('<table><tr><th class="cl" style="background:#1a3a6b">Class</th>');
+  for(var p=1;p<=c.periods;p++){
+    w.document.write('<th>Period '+p+'</th>');
+    if(p===c.break1) w.document.write('<th class="br" style="background:#1a3a6b">B</th>');
+    if(p===c.break2&&c.break2>0) w.document.write('<th class="br" style="background:#1a3a6b">B</th>');
+  }
+  w.document.write('</tr>');
+  TT_CLASSES.forEach(function(cls){
+    w.document.write('<tr><td class="cl">'+cls+'</td>');
+    for(var p=1;p<=c.periods;p++){
+      var e=ttGet(cls,d,p);
+      var sub=(e&&e.subject)?'<span class="sb">'+e.subject+'</span>':'';
+      var tea=(e&&e.teacher)?'<span class="tn">'+ttTeacherName(e.teacher)+'</span>':'';
+      w.document.write('<td>'+sub+tea+'</td>');
+      if(p===c.break1) w.document.write('<td class="br"></td>');
+      if(p===c.break2&&c.break2>0) w.document.write('<td class="br"></td>');
+    }
+    w.document.write('</tr>');
+  });
+  w.document.write('</table></body></html>');
+  w.document.close();
+  setTimeout(function(){w.print();},400);
+}
+
 function ttClearClass(){
   if(viewerBlock()) return;
   var cls=GV('tt-class');
