@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260823170436 -->
+<!-- v20260823172756 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -241,6 +242,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 
 
 
+
 </style>
 </head>
 <body>
@@ -266,6 +268,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
     <button class="nb" onclick="SP(this,'students')">🎓 Students</button>
     <button class="nb" onclick="SP(this,'staff')">👥 Staff</button>
     <button class="nb" onclick="SP(this,'families')">👨‍👩‍👧 Families</button>
+    <button class="nb" onclick="SP(this,'timetable')">🗓️ Timetable</button>
   </div>
   <div class="nav-group">
     <div class="nav-group-title">Collections</div>
@@ -339,6 +342,53 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
       <select id="sfcls" onchange="renderStudents()"><option value="">All Classes</option><option>PG</option><option>Nursery</option><option>Prep</option><option>One</option><option>Two</option><option>Three</option><option>Four</option><option>Five</option><option>Six</option></select>
     </div>
     <div class="tw"><table><thead><tr><th>#</th><th>Name</th><th>Class</th><th>Fee/Mo</th><th>Arrears</th><th>Phone</th><th>Action</th></tr></thead><tbody id="stb"></tbody></table></div>
+  </div>
+</div>
+
+
+<!-- TIMETABLE -->
+<div class="pg" id="pg-timetable">
+  <div class="st">Timetable</div><div class="ss">Weekly class &amp; teacher schedule</div>
+
+  <div class="card">
+    <div class="ct">Timetable Settings</div>
+    <div class="fr">
+      <div class="fg"><label>Periods per day</label><input id="tt-periods" type="number" min="1" max="12" value="8"></div>
+      <div class="fg"><label>Break after period</label><input id="tt-break1" type="number" min="0" max="12" value="4"></div>
+      <div class="fg"><label>2nd break after period (0 = none)</label><input id="tt-break2" type="number" min="0" max="12" value="0"></div>
+    </div>
+    <button class="btn bp" onclick="ttSaveConfig()">Save Settings</button>
+    <div id="a-tt"></div>
+    <p style="font-size:12px;color:var(--ink-s);margin-top:8px">School days: Monday to Saturday.</p>
+  </div>
+
+  <div class="card">
+    <div class="ct" style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px">
+      <span>Schedule</span>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div id="tt-editbtns" style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn bo sm" onclick="printTTClass()">Print This Class</button>
+          <button class="btn bo sm" onclick="printTTAllClasses()">Print All Classes</button>
+          <button class="btn br sm" onclick="ttClearClass()">Clear Class</button>
+        </div>
+        <div id="tt-teabtns" style="display:none;gap:8px;flex-wrap:wrap">
+          <button class="btn bo sm" onclick="printTTTeacher()">Print This Teacher</button>
+          <button class="btn bo sm" onclick="printTTAllTeachers()">Print All Teachers</button>
+        </div>
+      </div>
+    </div>
+    <div class="fr" style="margin-bottom:10px">
+      <div class="fg"><label>View by</label>
+        <select id="tt-view" onchange="ttSwitchView()">
+          <option value="class">Class</option>
+          <option value="teacher">Teacher</option>
+        </select>
+      </div>
+      <div class="fg" id="tt-class-wrap"><label>Class</label><select id="tt-class" onchange="renderTTClass()"></select></div>
+      <div class="fg" id="tt-teacher-wrap" style="display:none"><label>Teacher</label><select id="tt-teacher" onchange="renderTTTeacher()"></select></div>
+    </div>
+    <div id="tt-grid"></div>
+    <p style="font-size:11px;color:var(--ink-m);margin-top:8px">Type the subject and pick a teacher in each cell — changes save automatically. A red cell means that teacher is already booked in another class for that period.</p>
   </div>
 </div>
 
@@ -961,7 +1011,8 @@ var db = firebase.database();
 // ===== DB (local cache) =====
 var DB = {
   students: [], staff: [], fees: [], salaries: [],
-  expenses: [], annual: [], adm: [], summer: [], log: [], investments: [], charges: []
+  expenses: [], annual: [], adm: [], summer: [], log: [], investments: [], charges: [],
+  timetable: {}, ttConfig: null
 };
 
 // Load all data from Firebase
@@ -981,6 +1032,8 @@ function loadFromFirebase() {
     DB.payInfo  = data.payInfo || {};
     DB.investments = objToArr(data.investments);
     DB.charges = objToArr(data.charges);
+    DB.timetable = data.timetable || {};
+    DB.ttConfig = data.ttConfig || null;
     showLoading(false);
     updateDash(); updateStats(); checkFeeAlert();
     renderStudents();
@@ -1039,6 +1092,249 @@ function GA(id) { var s=DB.students.find(function(x){return x.id===id;}); return
 function isSalOff(sid, key) {
   var st=DB.staff.find(function(x){return x.id===sid;});
   return !!(st && st.offMonths && st.offMonths.indexOf(key)>=0);
+}
+
+/* ================= TIMETABLE ================= */
+var TT_DAYS=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+var TT_CLASSES=['PG','Nursery','Prep','One','Two','Three','Four','Five','Six'];
+
+function ttConfig(){
+  if(!DB.ttConfig) DB.ttConfig={periods:8, break1:4, break2:0};
+  if(DB.ttConfig.break2===undefined) DB.ttConfig.break2=0;
+  return DB.ttConfig;
+}
+function ttSaveConfig(){
+  if(viewerBlock()) return;
+  var c=ttConfig();
+  c.periods=Math.max(1,Math.min(12, parseInt(GV('tt-periods'))||8));
+  c.break1=parseInt(GV('tt-break1'))||0;
+  c.break2=parseInt(GV('tt-break2'))||0;
+  DB.ttConfig=c;
+  save(); db.ref('ttConfig').set(c);
+  renderTimetable();
+  showAlert('a-tt','Settings saved',false);
+}
+function ttKey(cls,d,p){ return cls+'|'+d+'|'+p; }
+function ttGet(cls,d,p){ return (DB.timetable||{})[ttKey(cls,d,p)]||null; }
+function ttSetCell(cls,d,p,subject,teacher){
+  if(!DB.timetable) DB.timetable={};
+  var k=ttKey(cls,d,p);
+  if(!subject && !teacher){ delete DB.timetable[k]; db.ref('timetable/'+k).remove(); }
+  else { DB.timetable[k]={subject:subject||'',teacher:teacher||''}; db.ref('timetable/'+k).set(DB.timetable[k]); }
+  save();
+}
+function ttClash(teacherId,d,p,exceptCls){
+  if(!teacherId) return null;
+  for(var i=0;i<TT_CLASSES.length;i++){
+    var c=TT_CLASSES[i];
+    if(c===exceptCls) continue;
+    var e=ttGet(c,d,p);
+    if(e && e.teacher===teacherId) return c;
+  }
+  return null;
+}
+function ttTeacherName(id){
+  var s=DB.staff.find(function(x){return x.id===id;});
+  return s?s.name:'';
+}
+
+function renderTimetable(){
+  var c=ttConfig();
+  if(G('tt-periods')) G('tt-periods').value=c.periods;
+  if(G('tt-break1')) G('tt-break1').value=c.break1;
+  if(G('tt-break2')) G('tt-break2').value=c.break2;
+  var sel=G('tt-class');
+  if(sel && !sel.options.length){
+    TT_CLASSES.forEach(function(cl){ sel.innerHTML+='<option>'+cl+'</option>'; });
+  }
+  var tsel=G('tt-teacher');
+  if(tsel){
+    var cur=tsel.value; tsel.innerHTML='';
+    DB.staff.forEach(function(s){ tsel.innerHTML+='<option value="'+s.id+'">'+s.name+'</option>'; });
+    if(cur) tsel.value=cur;
+  }
+  if(GV('tt-view')==='teacher') renderTTTeacher(); else renderTTClass();
+}
+
+function ttSwitchView(){
+  var v=GV('tt-view');
+  G('tt-class-wrap').style.display = v==='teacher'?'none':'block';
+  G('tt-teacher-wrap').style.display = v==='teacher'?'block':'none';
+  G('tt-editbtns').style.display = v==='teacher'?'none':'flex';
+  G('tt-teabtns').style.display = v==='teacher'?'flex':'none';
+  renderTimetable();
+}
+
+function renderTTClass(){
+  var c=ttConfig(), cls=GV('tt-class')||TT_CLASSES[0];
+  var h='<div class="tw"><table style="min-width:820px"><thead><tr><th style="min-width:70px">Day</th>';
+  for(var p=1;p<=c.periods;p++){
+    h+='<th>P'+p+'</th>';
+    if(p===c.break1) h+='<th style="background:#c8972a">Break</th>';
+    if(p===c.break2 && c.break2>0) h+='<th style="background:#c8972a">Break</th>';
+  }
+  h+='</tr></thead><tbody>';
+  TT_DAYS.forEach(function(day,d){
+    h+='<tr><td style="font-weight:700">'+day.slice(0,3)+'</td>';
+    for(var p=1;p<=c.periods;p++){
+      var e=ttGet(cls,d,p);
+      var sub=e?e.subject:'', tid=e?e.teacher:'';
+      var clash=tid?ttClash(tid,d,p,cls):null;
+      var bg=clash?'background:#ffe9e9;':'';
+      h+='<td style="padding:3px;'+bg+'">'
+        +'<input value="'+(sub||'').replace(/"/g,'&quot;')+'" placeholder="Subject" '
+        +'data-c="'+cls+'" data-d="'+d+'" data-p="'+p+'" onchange="ttCellChange(this,\'sub\')" '
+        +'style="width:100%;min-width:88px;padding:4px;font-size:11px;border:1px solid var(--bdr);border-radius:4px;margin-bottom:2px">'
+        +'<select data-c="'+cls+'" data-d="'+d+'" data-p="'+p+'" onchange="ttCellChange(this,\'tea\')" '
+        +'style="width:100%;padding:3px;font-size:10px;border:1px solid var(--bdr);border-radius:4px">'
+        +'<option value="">— teacher —</option>';
+      DB.staff.forEach(function(s){
+        h+='<option value="'+s.id+'"'+(s.id===tid?' selected':'')+'>'+s.name+'</option>';
+      });
+      h+='</select>';
+      if(clash) h+='<div style="font-size:9px;color:var(--red)">Clash: '+clash+'</div>';
+      h+='</td>';
+      if(p===c.break1) h+='<td style="background:var(--cream);text-align:center;font-size:10px;color:var(--ink-m)">B</td>';
+      if(p===c.break2 && c.break2>0) h+='<td style="background:var(--cream);text-align:center;font-size:10px;color:var(--ink-m)">B</td>';
+    }
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  G('tt-grid').innerHTML=h;
+}
+
+function ttCellChange(el, kind){
+  if(viewerBlock()) return;
+  var cls=el.dataset.c, d=parseInt(el.dataset.d), p=parseInt(el.dataset.p);
+  var prev=ttGet(cls,d,p)||{subject:'',teacher:''};
+  var cur={subject:prev.subject,teacher:prev.teacher};
+  if(kind==='sub') cur.subject=el.value.trim();
+  else cur.teacher=el.value;
+  if(kind==='tea' && cur.teacher){
+    var cl=ttClash(cur.teacher,d,p,cls);
+    if(cl && !confirm(ttTeacherName(cur.teacher)+' is already teaching class '+cl+' in this period.\n\nAssign anyway?')){
+      el.value=prev.teacher||''; return;
+    }
+  }
+  ttSetCell(cls,d,p,cur.subject,cur.teacher);
+  renderTTClass();
+}
+
+function renderTTTeacher(){
+  var c=ttConfig(), tid=GV('tt-teacher');
+  if(!tid){ G('tt-grid').innerHTML='<div class="empty">No staff found</div>'; return; }
+  var h='<div class="tw"><table style="min-width:700px"><thead><tr><th style="min-width:70px">Day</th>';
+  for(var p=1;p<=c.periods;p++) h+='<th>P'+p+'</th>';
+  h+='</tr></thead><tbody>';
+  var load=0;
+  TT_DAYS.forEach(function(day,d){
+    h+='<tr><td style="font-weight:700">'+day.slice(0,3)+'</td>';
+    for(var p=1;p<=c.periods;p++){
+      var found=null;
+      TT_CLASSES.forEach(function(cl){
+        var e=ttGet(cl,d,p);
+        if(e && e.teacher===tid) found={cls:cl,sub:e.subject};
+      });
+      if(found){ load++;
+        h+='<td style="background:var(--green-p);font-size:11px"><strong>'+found.cls+'</strong><br>'+(found.sub||'')+'</td>';
+      } else {
+        h+='<td style="color:var(--ink-m);font-size:11px">Free</td>';
+      }
+    }
+    h+='</tr>';
+  });
+  h+='</tbody></table></div>';
+  h+='<div style="margin-top:10px;font-weight:700;color:var(--blue)">Total periods per week: '+load+'</div>';
+  G('tt-grid').innerHTML=h;
+}
+
+function ttPrintHead(win,title){
+  win.document.write('<!DOCTYPE html><html><head><title>'+title+'</title><style>*{box-sizing:border-box;margin:0;padding:0}body{font-family:Arial,sans-serif;padding:16px;font-size:12px}h2,h3{text-align:center}table{width:100%;border-collapse:collapse;margin:6px 0 18px}th{background:#1a3a6b;color:#fff;padding:6px;font-size:11px;border:1px solid #1a3a6b}td{padding:6px;border:1px solid #bbb;font-size:11px;text-align:center;height:42px}.br{background:#f3e7c8;font-weight:700}.pt{font-size:15px;font-weight:700;color:#1a3a6b;margin:14px 0 4px}@media print{.pgbrk{page-break-after:always}}</style></head><body>');
+  win.document.write('<h2>DAR-E-ARQAM SCHOOL</h2><h3>Haveli Lakha Campus</h3>');
+}
+function ttClassTable(win,cls){
+  var c=ttConfig();
+  win.document.write('<div class="pt">Class '+cls+' — Weekly Timetable</div>');
+  win.document.write('<table><thead><tr><th>Day</th>');
+  for(var p=1;p<=c.periods;p++){
+    win.document.write('<th>Period '+p+'</th>');
+    if(p===c.break1) win.document.write('<th>Break</th>');
+    if(p===c.break2&&c.break2>0) win.document.write('<th>Break</th>');
+  }
+  win.document.write('</tr></thead><tbody>');
+  TT_DAYS.forEach(function(day,d){
+    win.document.write('<tr><td style="font-weight:700">'+day+'</td>');
+    for(var p=1;p<=c.periods;p++){
+      var e=ttGet(cls,d,p);
+      win.document.write('<td>'+(e&&e.subject?'<strong>'+e.subject+'</strong>':'')+(e&&e.teacher?'<br><span style="font-size:9px">'+ttTeacherName(e.teacher)+'</span>':'')+'</td>');
+      if(p===c.break1) win.document.write('<td class="br">B</td>');
+      if(p===c.break2&&c.break2>0) win.document.write('<td class="br">B</td>');
+    }
+    win.document.write('</tr>');
+  });
+  win.document.write('</tbody></table>');
+}
+function printTTClass(){
+  var cls=GV('tt-class')||TT_CLASSES[0];
+  var w=window.open('','_blank'); ttPrintHead(w,'Timetable - '+cls);
+  ttClassTable(w,cls); w.document.write('</body></html>'); w.document.close();
+  setTimeout(function(){w.print();},400);
+}
+function printTTAllClasses(){
+  var w=window.open('','_blank'); ttPrintHead(w,'All Class Timetables');
+  TT_CLASSES.forEach(function(cls,i){
+    if(i>0) w.document.write('<div class="pgbrk"></div>');
+    ttClassTable(w,cls);
+  });
+  w.document.write('</body></html>'); w.document.close();
+  setTimeout(function(){w.print();},400);
+}
+function ttTeacherTable(win,tid){
+  var c=ttConfig();
+  win.document.write('<div class="pt">'+ttTeacherName(tid)+' — Weekly Timetable</div>');
+  win.document.write('<table><thead><tr><th>Day</th>');
+  for(var p=1;p<=c.periods;p++) win.document.write('<th>Period '+p+'</th>');
+  win.document.write('</tr></thead><tbody>');
+  var load=0;
+  TT_DAYS.forEach(function(day,d){
+    win.document.write('<tr><td style="font-weight:700">'+day+'</td>');
+    for(var p=1;p<=c.periods;p++){
+      var found=null;
+      TT_CLASSES.forEach(function(cl){ var e=ttGet(cl,d,p); if(e&&e.teacher===tid) found={cls:cl,sub:e.subject}; });
+      if(found){ load++; win.document.write('<td><strong>'+found.cls+'</strong><br><span style="font-size:9px">'+(found.sub||'')+'</span></td>'); }
+      else win.document.write('<td style="color:#999">Free</td>');
+    }
+    win.document.write('</tr>');
+  });
+  win.document.write('</tbody></table><p style="font-weight:700">Total periods per week: '+load+'</p>');
+}
+function printTTTeacher(){
+  var tid=GV('tt-teacher'); if(!tid){alert('Select a teacher');return;}
+  var w=window.open('','_blank'); ttPrintHead(w,'Timetable - '+ttTeacherName(tid));
+  ttTeacherTable(w,tid); w.document.write('</body></html>'); w.document.close();
+  setTimeout(function(){w.print();},400);
+}
+function printTTAllTeachers(){
+  var w=window.open('','_blank'); ttPrintHead(w,'All Teacher Timetables');
+  DB.staff.forEach(function(s,i){
+    if(i>0) w.document.write('<div class="pgbrk"></div>');
+    ttTeacherTable(w,s.id);
+  });
+  w.document.write('</body></html>'); w.document.close();
+  setTimeout(function(){w.print();},400);
+}
+function ttClearClass(){
+  if(viewerBlock()) return;
+  var cls=GV('tt-class');
+  if(!confirm('Clear the entire timetable for class '+cls+'?')) return;
+  var c=ttConfig();
+  TT_DAYS.forEach(function(_,d){
+    for(var p=1;p<=c.periods;p++){
+      var k=ttKey(cls,d,p);
+      if(DB.timetable && DB.timetable[k]){ delete DB.timetable[k]; db.ref('timetable/'+k).remove(); }
+    }
+  });
+  save(); renderTTClass();
 }
 
 // ===== CORRECT SALARY OUTSTANDING =====
@@ -1223,6 +1519,7 @@ function SP(btn,name) {
   G('pg-'+name).classList.add('on'); btn.classList.add('on');
   if(name==='fees') renderFees();
   if(name==='salary') renderSalary();
+  if(name==='timetable') renderTimetable();
   if(name==='students') renderStudents();
   if(name==='staff') renderStaff();
   if(name==='expenses') renderExpenses();
@@ -3650,6 +3947,8 @@ function importData() {
       DB.expenses=bk.data.expenses||[];DB.annual=bk.data.annual||[];
       DB.adm=bk.data.adm||[];DB.summer=bk.data.summer||[];
       DB.log=bk.data.log||[];
+      if(bk.data.timetable) DB.timetable=bk.data.timetable;
+      if(bk.data.ttConfig) DB.ttConfig=bk.data.ttConfig;
       save();
       // Sync all data to Firebase
       var tables={students:DB.students,staff:DB.staff,fees:DB.fees,salaries:DB.salaries,expenses:DB.expenses,annual:DB.annual,adm:DB.adm,summer:DB.summer,log:DB.log};
@@ -3658,6 +3957,8 @@ function importData() {
         tables[t].forEach(function(r){if(r&&r.id)obj[r.id]=r;});
         db.ref(t).set(obj).catch(function(e){console.error(e);});
       });
+      if(bk.data.timetable) db.ref('timetable').set(bk.data.timetable).catch(function(e){console.error(e);});
+      if(bk.data.ttConfig) db.ref('ttConfig').set(bk.data.ttConfig).catch(function(e){console.error(e);});
       updateDash(); updateStats();
       showAlert('a-imp','Restored & synced to Firebase! Students: '+DB.students.length);
     }catch(err){showAlert('a-imp','Error reading file',true);}
