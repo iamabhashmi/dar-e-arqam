@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<!-- v20260824010041 -->
+<!-- v20260824024341 -->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -10,6 +10,7 @@
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.23.0/firebase-database-compat.js"></script>
 <style>
+
 
 
 
@@ -167,6 +168,7 @@ tr:last-child td{border-bottom:none}tr:hover td{background:#f7f9fb}
 .bb{background:var(--cream);border-radius:7px;padding:10px;margin:10px 0;font-size:13px}
 @media(max-width:480px){.fr{grid-template-columns:1fr}
 .sg{gap:10px}.sc{padding:13px;gap:10px}.sc-ic{width:40px;height:40px;font-size:20px}.sv{font-size:17px}.card{padding:14px}.pg{padding:14px 12px}}
+
 
 
 
@@ -2198,10 +2200,10 @@ function printFamilyVoucher(fkeyEnc) {
   var win=window.open('','_blank');
   win.document.write('<!DOCTYPE html><html><head><title>Family Voucher - '+famLabel+'</title><style>');
   win.document.write('*{box-sizing:border-box;margin:0;padding:0}html,body{width:100%;height:auto;font-family:Arial,sans-serif;background:#fff}');
-  win.document.write('.vpage{display:flex;flex-direction:row;width:100%;height:198mm;page-break-after:always;break-after:page;overflow:hidden}');
+  win.document.write('.vpage{display:flex;flex-direction:row;width:100%;height:196mm;page-break-after:always;break-after:page;overflow:hidden}');
   win.document.write('.vcopy{flex:1;border:1px solid #333;padding:10px;font-size:10px;display:flex;flex-direction:column;height:100%;overflow:hidden}');
   win.document.write('.vmsg{flex:1;border:1px solid #333;padding:5px;font-size:9px;min-height:40px}');
-  win.document.write('@media print{@page{size:A4 landscape;margin:4mm}html,body{width:auto;height:auto}.vpage{height:198mm;page-break-after:always;break-after:page}.vpage:last-child{page-break-after:auto;break-after:auto}button{display:none}}');
+  win.document.write('@page{size:landscape;margin:4mm}@media print{html,body{width:auto;height:auto}.vpage{page-break-after:always;break-after:page}.vpage:last-child{page-break-after:auto;break-after:auto}button{display:none}}@media print and (orientation:landscape){.vpage{flex-direction:row;height:196mm}.vcopy{height:100%}}@media print and (orientation:portrait){.vpage{flex-direction:column;height:auto;gap:2mm}.vcopy{height:88mm;flex:none}.vmsg{min-height:18mm}}');
   win.document.write('</style></head><body>'+page+'</body></html>');
   win.document.close(); setTimeout(function(){win.print();},800);
 }
@@ -3859,10 +3861,10 @@ function printVouchers() {
   var win=window.open('','_blank');
   win.document.write('<!DOCTYPE html><html><head><title>Fee Vouchers</title><style>');
   win.document.write('*{box-sizing:border-box;margin:0;padding:0}html,body{width:100%;height:auto;font-family:Arial,sans-serif;background:#fff}');
-  win.document.write('.vpage{display:flex;flex-direction:row;width:100%;height:198mm;page-break-after:always;break-after:page;overflow:hidden}');
+  win.document.write('.vpage{display:flex;flex-direction:row;width:100%;height:196mm;page-break-after:always;break-after:page;overflow:hidden}');
   win.document.write('.vcopy{flex:1;border:1px solid #333;padding:10px;font-size:10px;display:flex;flex-direction:column;height:100%;overflow:hidden}');
   win.document.write('.vmsg{flex:1;border:1px solid #333;padding:5px;font-size:9px;min-height:40px}');
-  win.document.write('@media print{@page{size:A4 landscape;margin:4mm}html,body{height:auto}.vpage{height:198mm;page-break-after:always;break-after:page}.vpage:last-child{page-break-after:auto;break-after:auto}button{display:none}}');
+  win.document.write('@page{size:landscape;margin:4mm}@media print{html,body{width:auto;height:auto}.vpage{page-break-after:always;break-after:page}.vpage:last-child{page-break-after:auto;break-after:auto}button{display:none}}@media print and (orientation:landscape){.vpage{flex-direction:row;height:196mm}.vcopy{height:100%}}@media print and (orientation:portrait){.vpage{flex-direction:column;height:auto;gap:2mm}.vcopy{height:88mm;flex:none}.vmsg{min-height:18mm}}');
   win.document.write('</style></head><body>');
   win.document.write(area.innerHTML);
   win.document.write('</body></html>');
